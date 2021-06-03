@@ -1,18 +1,10 @@
-import imageio
-import cv2 as cv
-import matplotlib.pyplot as plt
-import pandas as pd
-import numpy as np
-import os, sys
-from sklearn.mixture import GaussianMixture
+from lib import *
+app = QApplication(sys.argv)
 
-path_project = "/Users/jchen/Dropbox/projects/Virtual_tags"
+path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/One_Pig"
 os.chdir(path_project)
 
-im = imageio.imread('my_image.png')
-print(im.shape)
-
-name_imgs = os.listdir("pigs")
+name_imgs = os.listdir()
 name_imgs.sort()
 
 
@@ -20,17 +12,23 @@ name_imgs.sort()
 window = 60
 imgs_rgb = np.zeros((window, 480, 848, 3), dtype=np.uint8)
 for i in range(window):
-    imgs_rgb[i] = cv.imread(os.path.join("pigs", name_imgs[i]))
+    imgs_rgb[i] = cv.imread(name_imgs[i])
 
 imgs_bw = imgs_rgb.sum(axis=3)
 
+img = detect_imgs(img=imgs_bw, frame=40)
+plt.imshow(img)
 
-def get_binary(imgs, f0, f1, cut=127):
-    out_std = imgs[f0:f1].std(axis=(0, ))
-    # out_std[out_std < np.quantile(out_std, .9)] = 0
-    out_std = (out_std - out_std.min()) * 255 / (out_std.max() - out_std.min())
-    _, out = cv.threshold(out_std, cut, 255, cv.THRESH_BINARY)
-    return out.astype(np.uint8)
+
+# Test QPixmap
+i = 20
+qp = QPixmap(name_imgs[i])
+qb = np2qt(detect_imgs(img=imgs_bw, frame=i))
+
+
+
+
+plt.imshow(qp.toImage())
 
 
 f0 = [34, 35, 36, 37]
@@ -38,7 +36,7 @@ w  = [2]*4
 out = []
 
 for i in range(4):
-    out += [get_binary(imgs_bw, f0[i], f0[i] + w[i], cut=127)]
+    out += [get_binary(imgs_bw, f0[i], f0[i] + w[i], cut=0.5)]
 
 # Plotting
 fig, ax = plt.subplots(nrows=2, ncols=2, figsize=(15, 8))
@@ -52,35 +50,34 @@ ax[1, 1].imshow(out[3])
 ax[1, 1].set_title("%d-%d frames" % (f0[3], f0[3] + w[3] - 1))
 
 
-from sklearn.cluster import AgglomerativeClustering
-from sklearn.neighbors import kneighbors_graph
+
+i = 40
+img = detect_imgs(img=imgs_bw, frame=i)
+
+# i = 40
+rgy = [20, 250]
+rgx = [240, 450]
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15, 4))
+# i = 20
+# rgy = [20, 300]
+# rgx = [360, 600]
+ax[0].imshow(img[rgy[0]:rgy[1], rgx[0]:rgx[1]])
+ax[0].set_title("Detection")
+ax[1].imshow(imgs_bw[i][rgy[0]:rgy[1], rgx[0]:rgx[1]])
+ax[1].set_title("Raw")
+
+
+
+fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(15, 4))
+ax[0].imshow(img)
+ax[0].set_title("Detection")
+ax[1].imshow(imgs_bw[i])
+ax[1].set_title("Raw")
 
 
 
 
-def turn_img_to_clusters(img, k):
-    # turn bitmap to x, y vector/array
-    y, x = np.nonzero(img)
-    img2d = np.array([[y[i], x[i]] for i in range(len(x))])
 
-    # clustering
-    knn_graph = kneighbors_graph(img2d, 30, include_self=False)
-    model     = AgglomerativeClustering(linkage     ="ward",  # average, complete, ward, single
-                                        connectivity=knn_graph,
-                                        n_clusters  =k)
-    model.fit(img2d)
-
-    # get output labels
-    lbs = model.labels_
-    # plt.scatter(img2d[lbs == 0, 1], img2d[lbs == 0, 0], )
-    # plt.scatter(img2d[lbs == 1, 1], img2d[lbs == 1, 0], )
-
-    # create labeled image
-    img_c = np.zeros(out[2].shape)
-    for i, j, k in zip(y, x, lbs):
-        img_c[i, j] = k + 1
-
-    return img_c
 
 
 plt.imshow(turn_img_to_clusters(out[0], 2))

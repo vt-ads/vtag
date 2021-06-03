@@ -1,25 +1,20 @@
-from PyQt5.QtGui import QPixmap
-from PyQt5.QtWidgets import (QApplication, QPushButton, QWidget, QLabel, QSlider,
-                             QGridLayout,  QVBoxLayout, QHBoxLayout, QSizePolicy)
-from PyQt5.QtCore import Qt, QTimer, QObject, QThread, pyqtSignal
+from lib import *
 
-import sys, os, time
-import cv2 as cv
 
 class Player(QWidget):
-    def __init__(self):
+    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_all"):
         super().__init__()
 
         # WD
-        folder = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig"
         os.chdir(folder)
 
         # Frames
-        self.paths   = get_imgs_path(folder)
-        self.frame   = QLabel(self)
+        self.paths   = ls_files(folder)
+        self.np_imgs = load_np(self.paths, n_imgs=300)
+        self.frame   = QFrame()
         self.n_frame = len(self.paths)
         self.i_frame = 0
-        self.fps     = 10 / 1000
+        self.fps     = 20 / 1000
 
         # Status
         self.i_frame = 0
@@ -33,13 +28,7 @@ class Player(QWidget):
                             play  = QPushButton("Play"),
                             next  = QPushButton("Next frame > "),
                             prev  = QPushButton("< Previous frame"))
-
         self.slider = QSlider(Qt.Horizontal, self)
-        self.slider.setMinimum(0)
-        self.slider.setMaximum(self.n_frame - 1)
-        self.slider.setValue(0)
-        self.slider.setTickPosition(QSlider.NoTicks)
-        self.slider.setTickInterval(1)
 
         # init
         self.update_frames()
@@ -55,6 +44,14 @@ class Player(QWidget):
         self.slider.valueChanged.connect(self.traverse_frames)
 
     def initUI(self):
+        # Slider
+        self.slider.setMinimum(0)
+        self.slider.setMaximum(self.n_frame - 1)
+        self.slider.setValue(0)
+        self.slider.setTickPosition(QSlider.NoTicks)
+        self.slider.setTickInterval(1)
+
+        # Layout
         layout = QGridLayout(self)
         self.frame.setSizePolicy(QSizePolicy.Maximum,
                                  QSizePolicy.Maximum)
@@ -91,6 +88,12 @@ class Player(QWidget):
         self.slider.setValue(i)
         self.frame.setPixmap(QPixmap(self.paths[i]))
 
+        # detect images
+        # self.frame.show_detect = False
+        img_detect = detect_imgs(self.np_imgs, i)
+        self.frame.img_detect = getBinQImg(img_detect)
+        self.frame.repaint()
+
     def traverse_frames(self):
         self.i_frame = self.slider.value()
         self.update_frames()
@@ -107,19 +110,83 @@ class Player(QWidget):
             self.timer.stop()
 
 
-def get_imgs_path(path):
-    ls_imgs = os.listdir(path)
-    ls_imgs.sort()
-    return ls_imgs
+class QFrame(QLabel):
+    '''
+    Will keep imgRaw, imgVis and imgQmap
+    '''
+
+    def __init__(self):
+        super().__init__()
+        # self.img_raw = img
+        # self.img_vis = img[:, :, :3].copy()
+        self.show_detect = True
+        self.img_detect = None
+
+        self.qimg = None
+        self.isFitWidth = None
+        self.rgX, self.rgY = (0, 0), (0, 0)
+        self.sizeImg = (0, 0)
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        if self.show_detect:
+            painter.setOpacity(0.5)
+            painter.drawPixmap(0, 0, self.img_detect)
+        painter.end()
 
 
-if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    player = Player()
-    sys.exit(app.exec_())
+def getRGBQImg(img):
+    h, w = img.shape[0], img.shape[1]
+    qImg = QImage(img.astype(np.uint8).copy(), w, h, w*3, QImage.Format_RGB888)
+    return QPixmap(qImg)
 
+
+def getBinQImg(img):
+    h, w = img.shape[0], img.shape[1]
+    qImg = QImage(img.astype(np.uint8).copy(), w,
+                  h, w*1, QImage.Format_Indexed8)
+    qImg.setColor(0, qRgb(0, 0, 0))
+    qImg.setColor(1, qRgb(241, 225, 29))
+    return QPixmap(qImg)
+
+
+def getIdx8QImg(img, k):
+    colormap = [qRgb(228, 26, 28),
+                qRgb(55, 126, 184),
+                qRgb(77, 175, 74),
+                qRgb(152, 78, 163),
+                qRgb(255, 127, 0),
+                qRgb(255, 255, 51),
+                qRgb(166, 86, 40),
+                qRgb(247, 129, 191),
+                qRgb(153, 153, 153)]
+    h, w = img.shape[0], img.shape[1]
+    qImg = QImage(img.astype(np.uint8).copy(), w,
+                  h, w*1, QImage.Format_Indexed8)
+    for i in range(k):
+        qImg.setColor(i, colormap[i])
+    return QPixmap(qImg)
+
+
+def getGrayQImg(img):
+    h, w = img.shape[0], img.shape[1]
+    qImg = QImage(img.astype(np.uint8).copy(), w,
+                  h, w*1, QImage.Format_Grayscale8)
+    return QPixmap(qImg)
 
 
 # Note
 # self.thread = QThread(self)
 # self.thread.started.connect(self.update_image)
+
+    #     s = p1.size().expandedTo(p2.size())
+    # result = QtGui.QPixmap(s)
+    # result.fill(QtCore.Qt.transparent)
+    # painter = QtGui.QPainter(result)
+    # painter.setRenderHint(QtGui.QPainter.Antialiasing)
+    # painter.drawPixmap(QtCore.QPoint(), p1)
+    # painter.setCompositionMode(mode)
+    # painter.drawPixmap(result.rect(), p2, p2.rect())
+    # painter.end()
+    # return result
