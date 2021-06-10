@@ -2,19 +2,30 @@ from lib import *
 
 
 class Player(QWidget):
-    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_all"):
+    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig"):
+    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_all"):
         super().__init__()
 
         # WD
         os.chdir(folder)
 
+        # Predictions
+        self.img_bin = []
+        self.img_ct  = []
         # Frames
         self.paths   = ls_files(folder)
-        self.np_imgs = load_np(self.paths, n_imgs=300)
         self.frame   = QFrame()
         self.n_frame = len(self.paths)
         self.i_frame = 0
-        self.fps     = 20 / 1000
+        self.lb_frame = QLabel("Frame: %d" % self.i_frame)
+        self.fps     = 10 / 1000
+
+        # Predictions
+        self.np_imgs  = load_np(self.paths, n_imgs=-1)
+        self.sli_thre = QSlider(Qt.Horizontal, self)
+        self.lb_thre  = QLabel("Threshold: %.3f" % (self.sli_thre.value()/1000))
+        self.sli_span = QSlider(Qt.Horizontal, self)
+        self.lb_span  = QLabel("Span: %d" % self.sli_span.value())
 
         # Status
         self.i_frame = 0
@@ -28,12 +39,51 @@ class Player(QWidget):
                             play  = QPushButton("Play"),
                             next  = QPushButton("Next frame > "),
                             prev  = QPushButton("< Previous frame"))
-        self.slider = QSlider(Qt.Horizontal, self)
+        self.playback = QSlider(Qt.Horizontal, self)
 
         # init
+        self.compute()
         self.update_frames()
         self.initRuntime()
         self.initUI()
+
+    def compute(self):
+        imgs = load_np(self.paths)
+        n = len(imgs)
+
+        self.img_bin = []
+        self.cx = []
+        self.cy = []
+        cx = []
+        cy = []
+        kernel = np.array((
+            [-1, -1, -1],
+            [-1, 8, -1],
+            [-1, -1, -1]),
+            dtype='int')
+        gauss = np.array((
+            [1, 4, 1],
+            [4, 9, 4],
+            [1, 4, 1]),
+            dtype='int') / 29
+        for i in range(n):
+            img_p = detect_imgs(imgs, i, span=1)
+            img_p = convolve2d(img_p, kernel, mode="same")#
+            img_p = get_binary(img_p)#
+            for _ in range(5):
+                img_p = convolve2d(img_p, gauss, mode="same")
+                img_p = get_binary(img_p, cutabs=.5)
+            self.img_bin += [img_p]
+            y, x = find_center(img_p)
+            cy += [y]
+            cx += [x]
+
+        self.cx = cx
+        self.cy = cy
+
+        # self.cx = process_signals(cx)
+        # self.cy = process_signals(cy)
+
 
     def initRuntime(self):
         self.timer.timeout.connect(self.next_frames)
@@ -41,15 +91,33 @@ class Player(QWidget):
             lambda x: self.change_status(not self.is_play))
         self.buttons["next"].clicked.connect(self.next_frames)
         self.buttons["prev"].clicked.connect(self.prev_frames)
-        self.slider.valueChanged.connect(self.traverse_frames)
+        self.playback.valueChanged.connect(self.traverse_frames)
+        self.sli_span.valueChanged.connect(self.change_span)
+        self.sli_thre.valueChanged.connect(self.change_thre)
 
     def initUI(self):
         # Slider
-        self.slider.setMinimum(0)
-        self.slider.setMaximum(self.n_frame - 1)
-        self.slider.setValue(0)
-        self.slider.setTickPosition(QSlider.NoTicks)
-        self.slider.setTickInterval(1)
+        self.lb_thre.setAlignment(Qt.AlignCenter)
+        self.sli_thre.setMinimum(500)
+        self.sli_thre.setMaximum(1000)
+        self.sli_thre.setValue(1000)
+        self.sli_thre.setTickPosition(QSlider.NoTicks)
+        self.sli_thre.setTickInterval(1)
+        self.sli_thre.setVisible(False)
+
+        self.lb_span.setAlignment(Qt.AlignCenter)
+        self.sli_span.setMinimum(1)
+        self.sli_span.setMaximum(20)
+        self.sli_span.setValue(1)
+        self.sli_span.setTickPosition(QSlider.NoTicks)
+        self.sli_span.setTickInterval(1)
+        self.sli_span.setVisible(False)
+
+        self.playback.setMinimum(0)
+        self.playback.setMaximum(self.n_frame - 1)
+        self.playback.setValue(0)
+        self.playback.setTickPosition(QSlider.NoTicks)
+        self.playback.setTickInterval(1)
 
         # Layout
         layout = QGridLayout(self)
@@ -59,10 +127,15 @@ class Player(QWidget):
 
         layout.addWidget(self.buttons["browse"], 0, 0, 1, 3)
         layout.addWidget(self.frame,             1, 0, 1, 3, alignment=Qt.AlignCenter)
-        layout.addWidget(self.slider,            2, 0, 1, 3)
-        layout.addWidget(self.buttons["prev"],   3, 0)
-        layout.addWidget(self.buttons["play"],   3, 1)
-        layout.addWidget(self.buttons["next"],   3, 2)
+        layout.addWidget(self.lb_frame,          2, 0, 1, 3)
+        layout.addWidget(self.playback,          3, 0, 1, 3)
+        # layout.addWidget(self.lb_span,           4, 0, 1, 3)
+        # layout.addWidget(self.sli_span,          5, 0, 1, 3)
+        # layout.addWidget(self.lb_thre,           6, 0, 1, 3)
+        # layout.addWidget(self.sli_thre,          7, 0, 1, 3)
+        layout.addWidget(self.buttons["prev"],   8, 0)
+        layout.addWidget(self.buttons["play"],   8, 1)
+        layout.addWidget(self.buttons["next"],   8, 2)
         self.setLayout(layout)
 
         self.move(300, 200)
@@ -85,17 +158,32 @@ class Player(QWidget):
 
     def update_frames(self):
         i = self.i_frame
-        self.slider.setValue(i)
+        self.playback.setValue(i)
+        self.lb_frame.setText("Frame: %d" % i)
         self.frame.setPixmap(QPixmap(self.paths[i]))
-
-        # detect images
-        # self.frame.show_detect = False
-        img_detect = detect_imgs(self.np_imgs, i)
-        self.frame.img_detect = getBinQImg(img_detect)
+        # self.frame.set_image(QPixmap(self.paths[i]))
+        # Strategy I
+        # img_predict = detect_imgs(self.np_imgs, i,
+        #                           span=self.sli_span.value(),
+        #                           q   =self.sli_thre.value()/1000)
+        # cy, cx = find_center(img_predict)
+        # self.frame.set_center(cx, cy)
+        # self.frame.set_predict(img_predict)
+        # Strategy II
+        self.frame.set_center(self.cx[i], self.cy[i])
+        self.frame.set_predict(self.img_bin[i])
         self.frame.repaint()
 
+    def change_span(self):
+        self.lb_span.setText("Span: %d" % self.sli_span.value())
+        self.update_frames()
+
+    def change_thre(self):
+        self.lb_thre.setText("Threshold: %.3f" % (self.sli_thre.value()/1000))
+        self.update_frames()
+
     def traverse_frames(self):
-        self.i_frame = self.slider.value()
+        self.i_frame = self.playback.value()
         self.update_frames()
 
     def change_status(self, to_play):
@@ -117,22 +205,41 @@ class QFrame(QLabel):
 
     def __init__(self):
         super().__init__()
-        # self.img_raw = img
-        # self.img_vis = img[:, :, :3].copy()
+        self.pixmap = None
         self.show_detect = True
         self.img_detect = None
+        self.cx = -20
+        self.cy = -20
 
-        self.qimg = None
-        self.isFitWidth = None
-        self.rgX, self.rgY = (0, 0), (0, 0)
-        self.sizeImg = (0, 0)
+    def set_image(self, pixmap):
+        self.pixmap = pixmap
+
+    def set_predict(self, img):
+        self.img_detect = getBinQImg(img)
+
+    def set_center(self, cx, cy):
+        self.cx = cx
+        self.cy = cy
 
     def paintEvent(self, event):
         super().paintEvent(event)
         painter = QPainter(self)
         if self.show_detect:
-            painter.setOpacity(0.5)
+            painter.setOpacity(0.8)
             painter.drawPixmap(0, 0, self.img_detect)
+
+            pen = QPen()
+            pen.setWidth(8)
+            pen.setStyle(Qt.SolidLine)
+            pen.setColor(Qt.red)
+            painter.setPen(pen)
+            drawCross(self.cx, self.cy, painter, size=6)
+
+        if self.pixmap is not None:
+            print("sss")
+            painter.setOpacity(0.0)
+            painter.drawPixmap(0, 0, self.pixmap)
+
         painter.end()
 
 
