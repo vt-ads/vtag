@@ -1,8 +1,12 @@
 from lib import *
+from Tags import VTags
 
 
 class Player(QWidget):
-    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig"):
+    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig"):
+    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/group"):
+    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/group_small"):
+    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_small"):
     # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_all"):
         super().__init__()
 
@@ -11,8 +15,8 @@ class Player(QWidget):
 
         # Predictions
         self.img_bin = []
-        self.img_ct  = []
         # Frames
+        self.folder  = folder
         self.paths   = ls_files(folder)
         self.frame   = QFrame()
         self.n_frame = len(self.paths)
@@ -21,7 +25,6 @@ class Player(QWidget):
         self.fps     = 10 / 1000
 
         # Predictions
-        self.np_imgs  = load_np(self.paths, n_imgs=-1)
         self.sli_thre = QSlider(Qt.Horizontal, self)
         self.lb_thre  = QLabel("Threshold: %.3f" % (self.sli_thre.value()/1000))
         self.sli_span = QSlider(Qt.Horizontal, self)
@@ -48,42 +51,25 @@ class Player(QWidget):
         self.initUI()
 
     def compute(self):
-        imgs = load_np(self.paths)
-        n = len(imgs)
-
-        self.img_bin = []
-        self.cx = []
-        self.cy = []
-        cx = []
-        cy = []
-        kernel = np.array((
-            [-1, -1, -1],
-            [-1, 8, -1],
-            [-1, -1, -1]),
-            dtype='int')
-        gauss = np.array((
-            [1, 4, 1],
-            [4, 9, 4],
-            [1, 4, 1]),
-            dtype='int') / 29
-        for i in range(n):
-            img_p = detect_imgs(imgs, i, span=1)
-            img_p = convolve2d(img_p, kernel, mode="same")#
-            img_p = get_binary(img_p)#
-            for _ in range(5):
-                img_p = convolve2d(img_p, gauss, mode="same")
-                img_p = get_binary(img_p, cutabs=.5)
-            self.img_bin += [img_p]
-            y, x = find_center(img_p)
-            cy += [y]
-            cx += [x]
-
-        self.cx = cx
-        self.cy = cy
-
-        # self.cx = process_signals(cx)
-        # self.cy = process_signals(cy)
-
+        app = VTags(k=2)
+        app.load(h5="out.h5")
+        # print("--- load ---", flush=True)
+        # app.load(self.folder)
+        # print("--- move ---", flush=True)
+        # app.detect_movements()
+        # print("--- edge ---", flush=True)
+        # app.detect_edges()
+        # print("--- noise ---", flush=True)
+        # app.remove_noise()
+        # print("--- cluster ---", flush=True)
+        # app.detect_clusters()
+        # print("--- sort ---", flush=True)
+        # app.sort_clusters()
+        # print("--- k to id ---", flush=True)
+        # app.map_k_to_id()
+        # print("--- predict ---", flush=True)
+        # app.make_predictions()
+        self.img_bin = app.OUTS["pred"]
 
     def initRuntime(self):
         self.timer.timeout.connect(self.next_frames)
@@ -161,16 +147,7 @@ class Player(QWidget):
         self.playback.setValue(i)
         self.lb_frame.setText("Frame: %d" % i)
         self.frame.setPixmap(QPixmap(self.paths[i]))
-        # self.frame.set_image(QPixmap(self.paths[i]))
-        # Strategy I
-        # img_predict = detect_imgs(self.np_imgs, i,
-        #                           span=self.sli_span.value(),
-        #                           q   =self.sli_thre.value()/1000)
-        # cy, cx = find_center(img_predict)
-        # self.frame.set_center(cx, cy)
-        # self.frame.set_predict(img_predict)
-        # Strategy II
-        self.frame.set_center(self.cx[i], self.cy[i])
+        # self.frame.set_center(self.cx[i], self.cy[i])
         self.frame.set_predict(self.img_bin[i])
         self.frame.repaint()
 
@@ -215,7 +192,7 @@ class QFrame(QLabel):
         self.pixmap = pixmap
 
     def set_predict(self, img):
-        self.img_detect = getBinQImg(img)
+        self.img_detect = getIdx8QImg(img, 10)
 
     def set_center(self, cx, cy):
         self.cx = cx
@@ -259,18 +236,20 @@ def getBinQImg(img):
 
 
 def getIdx8QImg(img, k):
-    colormap = [qRgb(228, 26, 28),
+    colormap = [qRgb(0, 0, 0),
+                qRgb(255, 255, 51),
                 qRgb(55, 126, 184),
                 qRgb(77, 175, 74),
+                qRgb(228, 26, 28),
                 qRgb(152, 78, 163),
                 qRgb(255, 127, 0),
-                qRgb(255, 255, 51),
-                qRgb(166, 86, 40),
+                qRgb(13, 136, 250),
                 qRgb(247, 129, 191),
                 qRgb(153, 153, 153)]
     h, w = img.shape[0], img.shape[1]
     qImg = QImage(img.astype(np.uint8).copy(), w,
                   h, w*1, QImage.Format_Indexed8)
+                #   h, w*3, QImage.Format_RGB888)
     for i in range(k):
         qImg.setColor(i, colormap[i])
     return QPixmap(qImg)

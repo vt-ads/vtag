@@ -2,20 +2,23 @@
 import os
 import sys
 import time
+import copy
+import pickle
 import cv2 as cv
 import matplotlib.pyplot as plt
 import pandas as pd
-import numpy as np
-from scipy.signal import convolve, convolve2d
-
-from sklearn.cluster    import AgglomerativeClustering
-from sklearn.neighbors  import kneighbors_graph
-from sklearn.mixture    import GaussianMixture
-from PyQt5.QtGui        import QPixmap, QImage, QPaintDevice, QPainter, qRgb, QPen
-from PyQt5.QtWidgets    import (QApplication, QPushButton, QWidget, QLabel, QSlider,
+import numpy  as np
+from scipy.signal      import spline_filter
+from scipy.signal      import convolve
+from scipy.signal      import convolve2d
+from scipy.signal      import find_peaks
+from sklearn.cluster   import AgglomerativeClustering
+from sklearn.neighbors import kneighbors_graph
+from sklearn.mixture   import GaussianMixture
+from PyQt5.QtGui       import QPixmap, QImage, QPaintDevice, QPainter, qRgb, QPen
+from PyQt5.QtWidgets   import (QApplication, QPushButton, QWidget, QLabel, QSlider,
                                 QGridLayout,  QVBoxLayout, QHBoxLayout, QSizePolicy)
-from PyQt5.QtCore       import Qt, QTimer, QObject, QThread, pyqtSignal
-
+from PyQt5.QtCore      import Qt, QTimer, QObject, QThread, pyqtSignal
 
 # def get_binary(signals, q):
 #     """
@@ -42,24 +45,23 @@ def get_binary(signals, cut=.5, cutabs=None, upbound=1):
     return out
 
 
-
 def detect_imgs(imgs, frame, span=1, n_sd=3):
     i = frame
     j = span
     out_std = []
     for _ in range(2):
         out_std += [
-            imgs[i:(i+j+1)].std(axis=(0, )),
+            imgs[i:  (i+j+1)].std(axis=(0, )),
             imgs[(i-j):(i+1)].std(axis=(0, ))
         ]
         j += 1
 
     out_img = sum(out_std) / len(out_std)
-    cutoff = np.median(out_img) + (n_sd * np.std(out_img))
-    _, out = cv.threshold(out_img, cutoff, 1, cv.THRESH_BINARY)
-    # _, out = cv.threshold(sum(out_std), np.quantile(out_std, q), 1, cv.THRESH_BINARY))
+    cutoff  = np.median(out_img) + (n_sd * np.std(out_img))
+    out     = get_binary(out_img, cutabs=cutoff)
     return out
 
+# === === === === === === === QT === === === === === === ===
 
 def np2qt(img):
     height, width = img.shape
@@ -71,7 +73,7 @@ def np2qt(img):
 def ls_files(path):
     ls_imgs = os.listdir(path)
     ls_imgs.sort()
-    return ls_imgs
+    return [f for f in ls_imgs if ".png" in f]
 
 
 def load_np(files, n_imgs=-1, is_BW=True):
@@ -195,48 +197,55 @@ def cv_k_means(data, k):
 
     return clusters, centers
 
-def distance(pt1, pt2):
-    return ((pt1[0] - pt2[0]) ** 2 + (pt1[1] - pt2[1]) ** 2) ** .5
+def distance(pt1, pt2, is_dir=False):
+    direction = (pt1[0] - pt2[0], pt1[1] - pt2[1])
+    distance  = (direction[0] ** 2 + direction[1] ** 2) ** .5
 
-def sort_by_dist(cts, cls, i, k):
+    if is_dir:
+        return distance, direction
+    else:
+        return distance
+
+def sort_by_dist(OUT, i):
     '''
     Sort k centers in cts[i + 1] based on distance between (i) and (i + 1)
     args
-        cts: list of centers
-        cls: list of clusters
         i  : ith frame
-        k  : number of clusters
     Time complexity O = (k-1)^2
     '''
-    if i == (len(cts) - 1):
-        return cts, cls, k * [0]
+    k = OUT["k"]
+    if i == (len(OUT["centers"]) - 1):
+        return OUT
 
     ls_min = []
-    # 0-0, 0-1, 0-2, 1-0, 1-1,
+    # 0-0, 0-1, 0-2, 1-0, 1-1
     for k1 in range(0, k - 1):
         ls_dist = []
         for k2 in range(k1, k):
-            ls_dist += [distance(cts[i][k1], cts[i + 1][k2])]
-
+            ls_dist += [distance(OUT["centers"][i][k1],
+                                 OUT["centers"][i + 1][k2])]
         # find min idx
         val_min = np.min(ls_dist)
         ls_min  += [val_min]
         idx_min = np.where(ls_dist == val_min)[0][0] + k1
-        # swap centers position
-        tmp                 = cts[i + 1][k1].copy()
-        cts[i + 1][k1]      = cts[i + 1][idx_min]
-        cts[i + 1][idx_min] = tmp
-        # swap clustering results
-        if cls[i + 1] is not None:
-            pos_k1 = cls[i + 1] == k1
-            pos_min = cls[i + 1] == idx_min
-            cls[i + 1][pos_k1] = idx_min
-            cls[i + 1][pos_min] = k1
+        # swap centers at i+1
+        tmp                            = OUT["centers"][i + 1][k1].copy()
+        OUT["centers"][i + 1][k1]      = OUT["centers"][i + 1][idx_min]
+        OUT["centers"][i + 1][idx_min] = tmp
+        # swap clustering i+1
+        if OUT["clusters"][i + 1] is not None:
+            pos_k1  = OUT["clusters"][i + 1] == k1
+            pos_min = OUT["clusters"][i + 1] == idx_min
+            OUT["clusters"][i + 1][pos_k1]   = idx_min
+            OUT["clusters"][i + 1][pos_min]  = k1
 
     # compute the distance of the last k
-    ls_min += [distance(cts[i][k - 1], cts[i + 1][k - 1])]
+    ls_min += [distance(OUT["centers"][i][k - 1],
+                        OUT["centers"][i + 1][k - 1])]
     # return
-    return cts, cls, ls_min
+    OUT["distance"][i]   = ls_min
+    OUT["directions"][i] = OUT["centers"][i + 1] - OUT["centers"][i]
+    return OUT
 
 # No swap
 # def sort_by_dist(cts, i, k):

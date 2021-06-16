@@ -1,11 +1,43 @@
 from lib import *
-from scipy.signal import spline_filter
-from scipy.signal import convolve2d
-from scipy.signal import convolve
-from scipy.signal import find_peaks
+from Tags import VTags
 
-path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/One_Pig"
+path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/group"
 os.chdir(path_project)
+app = VTags(k=2)
+app.load(h5="out.h5")
+
+
+
+
+fts_dir = np.swapaxes(app.OUTS["dct"], 1, 0).\
+    reshape((app.ARGS["k"], -1)).\
+    astype(np.float32)
+fts_yx = np.swapaxes(app.OUTS["cts"], 1, 0).\
+    reshape((app.ARGS["k"], -1)).\
+    astype(np.float32)
+fts_dis = np.swapaxes(app.OUTS["dist"], 1, 0).\
+    reshape((app.ARGS["k"], -1)).\
+    astype(np.float32)
+
+# fts = np.concatenate((fts_dir, fts_yx, fts_dis), axis=1)
+fts = np.concatenate((fts_dir, fts_dis), axis=1)
+ftsst = (fts - np.mean(fts, axis=0)) / (np.std(fts, axis=0) + 1e-9)
+
+
+k_to_id, _ = cv_k_means(ftsst, app.ARGS["n_id"] + 1)
+k_to_id += 1  # which k cluster -> which id
+app.OUTS["k_to_id"] = k_to_id
+app.make_predictions()
+
+i = 35
+plt.imshow(app.OUTS["cls"][i]==1)
+plt.imshow(app.OUTS["pred"][i]==2)
+plt.imshow(app.OUTS["pred"][i]==3)
+
+
+app.OUTS["cls"]
+
+
 
 # 63, 136
 
@@ -24,21 +56,33 @@ gauss = np.array((
     [1, 4, 1]), dtype='int') / 29
 
 
-k = 1
-npk = 3
-n_tags = k * npk
+# parameters
+n_id   = 2
+n_tags = 10
+k      = n_id * n_tags
 
-img_p = []
-img_c = []
-np_cts = np.zeros((n, n_tags, 2))
-ls_clt = n * [None]
-ls_yx  = n * [None]
+# Outputs
+OUT = dict()
+OUT["n"] = n
+OUT["k"] = k
+# images 2D array
+OUT["shades"]   = []
+OUT["edges"]    = []
+# n-length list
+OUT["centers"]  = np.zeros((n, k, 2)) # (y, x)
+OUT["clusters"] = n * [None]
+OUT["yx_edges"] = n * [None]
+
 for i in range(n):
-# for i in range(20):
+# for i in range(10):
     if i % 10 == 0:
         print("%d\r" % (i))
+
+    # === === === === === Find Candidates === === === === ===
     # Detect candidate pixels
     pred = detect_imgs(imgs, i, span=1)
+
+    # === === === === === Refine === === === === === === ===
     # Edge detection
     conv = convolve2d(pred, kernel, mode="same")
     conv = get_binary(conv)
@@ -46,43 +90,204 @@ for i in range(n):
     for _ in range(5):
         conv = convolve2d(conv, gauss, mode="same")
         conv = get_binary(conv, cutabs=.5)
-    img_p += [pred]
-    img_c += [conv]
-    # Clustering
+    OUT["shades"] += [pred]
+    OUT["edges"]  += [conv]
+
+    # === === === === === Clustering === === === === === ===
     try:
-        clusters, centers, np_yx = do_k_means(conv, n_tags)
-        ls_clt[i]       = clusters
-        ls_yx[i]        = np_yx
-        np_cts[i, :, 0] = centers[:, 0] # y
-        np_cts[i, :, 1] = centers[:, 1] # x
+        clusters, centers, np_yx = do_k_means(conv, k)
+        OUT["clusters"][i]       = clusters
+        OUT["centers"][i, :, 0]  = centers[:, 0]  # y
+        OUT["centers"][i, :, 1]  = centers[:, 1]  # x
+        OUT["yx_edges"][i]       = np_yx
     except Exception as e:
         print(e)
         None
 
-
-img_std = np.std(imgs, axis=(0))
-img_std.shape
-plt.imshow(img_std)
-img_p.shape
-
-
+pickle.dump(OUT, open("checkpoint.h5", "wb"))
+# === === === === === check point === === === === ===
 import copy
+import pickle
+from lib import *
+from scipy.signal import spline_filter
+from scipy.signal import convolve2d
+from scipy.signal import convolve
+from scipy.signal import find_peaks
 
-cts = np_cts.copy()
-cls = copy.deepcopy(ls_clt)
-ls_travel = np.zeros((n, npk))
+path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/group"
+os.chdir(path_project)
+
+
+OUT = pickle.load(open("checkpoint.h5", "rb"))
+# === === === === === check point === === === === ===
+
+# parameters
+n_id = 2
+n_tags = 10
+k = n_id * n_tags
+
+OUT["distance"]   = np.zeros((n, k))
+OUT["directions"] = np.zeros((n, k, 2))
+for i in range(n):
+    OUT = sort_by_dist(OUT, i)
+# distance travel to i frame
+OUT["distance"][1:] = OUT["distance"][:-1]
+
+
+
+fts_dir = np.swapaxes(OUT["directions"], 1, 0).\
+                reshape((k, -1)).\
+                astype(np.float32)
+
+k_to_id, _ = cv_k_means(fts_dir, n_id)
+k_to_id += 1 # which k cluster -> which id
+k_to_id = np.array(list(range(1, k + 1))) # DEBUG === === === === === === === === ===
+
+sd       = np.std(OUT["distance"])
+cut      = np.median(OUT["distance"]) + 2 * sd
+# n by k
+show_k   = OUT["distance"] <= cut
+
+
+# === === === === === Finalize prediction === === === === === ===
+OUT["predictions"] = np.zeros((n, ) + OUT["edges"][0].shape)
 
 for i in range(n):
-    cts, cls, ls_travel[i] = sort_by_dist(cts, cls, i, npk)
-# distance travel to i frame
-ls_travel[1:] = ls_travel[:-1]
-
-cts = np.swapaxes(cts, 1, 0).reshape((npk, -1)).astype(np.float32)
-cts.shape
-clusters, centers = cv_k_means(cts, k)
-
+    if OUT["clusters"][i] is not None:
+        clt      = OUT["clusters"][i]
+        pts      = OUT["yx_edges"][i].astype(np.int)
+        show     = show_k[i]
+        which_id = (k_to_id * show)[clt]
+        OUT["predictions"][i][pts[:, 0], pts[:, 1]] = which_id
 
 
+# === === === === === Demo === === === === === ===
+std = np.std(OUT["predictions"] > 0, axis=0)
+plt.figure(figsize=(16, 10))
+plt.imshow(std)
+
+# Movement by time
+std = np.std(OUT["predictions"][:50] > 0, axis=0)
+plt.figure(figsize=(16, 10))
+plt.imshow(std)
+std = np.std(OUT["predictions"][50:100] > 0, axis=0)
+plt.figure(figsize=(16, 10))
+plt.imshow(std)
+std = np.std(OUT["predictions"][100:150] > 0, axis=0)
+plt.figure(figsize=(16, 10))
+plt.imshow(std)
+std = np.std(OUT["predictions"][250:300] > 0, axis=0)
+plt.figure(figsize=(16, 10))
+plt.imshow(std)
+
+# Relative distance
+dist = []
+for i in range(len(OUT["centers"])):
+    pts = OUT["centers"][i][[10, 15]]
+    dist += [distance(pts[0], pts[1])]
+
+plt.figure(figsize=(16, 10))
+plt.plot(dist)
+
+# Travel distance
+OUT["distance"].shape
+plt.figure(figsize=(16, 10))
+for i in [10, 15]:
+    plt.plot(OUT["distance"][10:, i], label="pig %d" % i)
+plt.legend()
+
+# cumulated movement
+cum = np.cumsum(OUT["distance"][10:, [10, 15]], axis=0)
+for i in range(2):
+    plt.plot(cum[:, i], label="pig %d" % (i+1))
+plt.legend()
+
+cum = np.cumsum(OUT["distance"][200:300, [10, 15]], axis=0)
+for i in range(2):
+    plt.plot(cum[:, i], label="pig %d" % (i+1))
+plt.legend()
+
+cum = np.cumsum(OUT["distance"][100:200, [10, 15]], axis=0)
+for i in range(2):
+    plt.plot(cum[:, i], label="pig %d" % (i+1))
+plt.legend()
+cum = np.cumsum(OUT["distance"][:100, [10, 15]], axis=0)
+for i in range(2):
+    plt.plot(cum[:, i], label="pig %d" % (i+1))
+plt.legend()
+
+
+OUT["distance"].shape
+
+
+np_sd1 = np.std(OUT["predictions"]==5, axis=0)
+plt.figure(figsize=(16, 10))
+plt.imshow(np_sd1)
+
+np_sd2 = np.std(OUT["predictions"]==15, axis=0)
+plt.figure(figsize=(16, 10))
+plt.imshow(np_sd2)
+
+cc = copy.deepcopy(OUT["predictions"][:10])
+cc.shape
+np.std(cc == 10)
+np.std(cc == 9)
+(cc>10)[3, :10, :10]
+(cc<=10).shape
+
+np.sum(np_sd2)
+
+# === === === === === Demo === === === === === ===
+i = 50
+# Edge detection
+plt.figure(figsize=(16, 10))
+plt.imshow(imgs[i])
+plt.figure(figsize=(16, 10))
+plt.imshow(imgs[i+1])
+plt.figure(figsize=(16, 10))
+plt.imshow(imgs[i-1])
+plt.figure(figsize=(16, 10))
+plt.imshow(imgs[i+2])
+plt.figure(figsize=(16, 10))
+plt.imshow(imgs[i-2])
+
+
+pred = detect_imgs(imgs, i, span=1)
+plt.figure(figsize=(16, 10))
+plt.imshow(pred)
+
+# Edge detection
+conv = convolve2d(pred, kernel, mode="same")
+conv = get_binary(conv)
+
+plt.figure(figsize=(16, 10))
+plt.imshow(conv)
+
+# Remove noisy pixels
+for _ in range(5):
+    conv = convolve2d(conv, gauss, mode="same")
+    conv = get_binary(conv, cutabs=.5)
+
+plt.figure(figsize=(16, 10))
+plt.imshow(conv)
+
+
+
+
+
+(3, 6) + (3,)
+
+OUT.keys()
+
+
+OUT["directions"]
+
+
+
+
+
+xx = sort_by_dist(OUT, i)
+xx
 
 
 
@@ -99,10 +304,6 @@ ls_clt[5:10]
 
 
 cts
-
-sd       = np.std(ls_travel)
-cut      = np.median(ls_travel) + 2 * sd
-idx_mute = ls_travel > cut
 
 
 
