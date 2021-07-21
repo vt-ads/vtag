@@ -87,12 +87,12 @@ class VTags():
             imgs_mov[i] = detect_imgs(imgs_bw, i)
 
     def detect_edges(self, n_denoise=5):
-        kernel = np.array((
+        k_edge = np.array((
             [-1, -1, -1],
             [-1, 8, -1],
             [-1, -1, -1]),
             dtype='int')
-        gauss = np.array((
+        k_gauss = np.array((
             [1, 4, 1],
             [4, 9, 4],
             [1, 4, 1]),
@@ -103,10 +103,10 @@ class VTags():
         n        = self.ARGS["n"]
 
         for i in range(n):
-            conv = convolve2d(imgs_mov[i], kernel, mode="same")
+            conv = convolve2d(imgs_mov[i], k_edge, mode="same")
             conv = get_binary(conv)
             for _ in range(n_denoise):
-                conv = convolve2d(conv, gauss, mode="same")
+                conv = convolve2d(conv, k_gauss, mode="same")
                 conv = get_binary(conv, cutabs=.5)
             imgs_edg[i] = conv
 
@@ -129,6 +129,8 @@ class VTags():
 
     def sort_clusters(self):
         '''
+        NOTE: can be sort by colors and coordinate
+
         Sort k centers in cts[i + 1] based on distance between (i) and (i + 1)
         args
             i  : ith frame

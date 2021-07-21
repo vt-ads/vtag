@@ -7,6 +7,28 @@ app = VTags(k=2)
 app.load(h5="out.h5")
 
 
+# for presentation
+list(app.IMGS.keys())
+
+i = 37
+
+plt.imshow(app.IMGS["rgb"][i-2])
+plt.imshow(app.IMGS["rgb"][i-1])
+plt.imshow(app.IMGS["rgb"][i])
+plt.imshow(app.IMGS["rgb"][i+1])
+plt.imshow(app.IMGS["rgb"][i+2])
+
+plt.imshow(np.std(app.IMGS["bw"][(i-2):(i+1)], axis=0))
+plt.imshow(np.std(app.IMGS["bw"][(i-1):(i+1)], axis=0))
+plt.imshow(np.std(app.IMGS["bw"][(i):(i+2)], axis=0))
+plt.imshow(np.std(app.IMGS["bw"][(i):(i+3)], axis=0))
+
+
+
+plt.imshow(app.IMGS["mov"][i])
+plt.imshow(app.IMGS["edg"][i])
+
+
 
 
 fts_dir = np.swapaxes(app.OUTS["dct"], 1, 0).\

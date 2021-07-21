@@ -183,7 +183,7 @@ class QFrame(QLabel):
     def __init__(self):
         super().__init__()
         self.pixmap = None
-        self.show_detect = True
+        self.show_detect = False
         self.img_detect = None
         self.cx = -20
         self.cy = -20
