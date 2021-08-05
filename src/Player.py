@@ -3,8 +3,9 @@ from Tags import VTags
 
 
 class Player(QWidget):
-    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig"):
-    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/group"):
+    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig"):
+    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/group"):
+    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/ppl"):
     # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/group_small"):
     # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_small"):
     # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_all"):
@@ -22,7 +23,7 @@ class Player(QWidget):
         self.n_frame = len(self.paths)
         self.i_frame = 0
         self.lb_frame = QLabel("Frame: %d" % self.i_frame)
-        self.fps     = 10 / 1000
+        self.fps     = 12.5 / 1000
 
         # Predictions
         self.sli_thre = QSlider(Qt.Horizontal, self)
@@ -51,25 +52,10 @@ class Player(QWidget):
         self.initUI()
 
     def compute(self):
-        app = VTags(k=2)
-        app.load(h5="out.h5")
-        # print("--- load ---", flush=True)
-        # app.load(self.folder)
-        # print("--- move ---", flush=True)
-        # app.detect_movements()
-        # print("--- edge ---", flush=True)
-        # app.detect_edges()
-        # print("--- noise ---", flush=True)
-        # app.remove_noise()
-        # print("--- cluster ---", flush=True)
-        # app.detect_clusters()
-        # print("--- sort ---", flush=True)
-        # app.sort_clusters()
-        # print("--- k to id ---", flush=True)
-        # app.map_k_to_id()
-        # print("--- predict ---", flush=True)
-        # app.make_predictions()
-        self.img_bin = app.OUTS["pred"]
+        app = VTags()
+        app.load(h5="model.h5")
+        self.img_bin = app.OUTS["pred"] ### define what show on the screen
+        # self.img_bin = app.IMGS["edg"]  ### define what show on the screen
 
     def initRuntime(self):
         self.timer.timeout.connect(self.next_frames)
@@ -183,8 +169,8 @@ class QFrame(QLabel):
     def __init__(self):
         super().__init__()
         self.pixmap = None
-        self.show_detect = False
         self.img_detect = None
+        self.show_detect = True
         self.cx = -20
         self.cy = -20
 
@@ -192,7 +178,7 @@ class QFrame(QLabel):
         self.pixmap = pixmap
 
     def set_predict(self, img):
-        self.img_detect = getIdx8QImg(img, 10)
+        self.img_detect = getIdx8QImg(img,  int(np.max(img)))
 
     def set_center(self, cx, cy):
         self.cx = cx
@@ -213,7 +199,6 @@ class QFrame(QLabel):
             drawCross(self.cx, self.cy, painter, size=6)
 
         if self.pixmap is not None:
-            print("sss")
             painter.setOpacity(0.0)
             painter.drawPixmap(0, 0, self.pixmap)
 
@@ -236,22 +221,29 @@ def getBinQImg(img):
 
 
 def getIdx8QImg(img, k):
-    colormap = [qRgb(0, 0, 0),
-                qRgb(255, 255, 51),
-                qRgb(55, 126, 184),
-                qRgb(77, 175, 74),
-                qRgb(228, 26, 28),
-                qRgb(152, 78, 163),
-                qRgb(255, 127, 0),
-                qRgb(13, 136, 250),
-                qRgb(247, 129, 191),
-                qRgb(153, 153, 153)]
+    colormap = [qRgb(0, 0, 0),       # 0
+                qRgb(255, 255, 51),  # 1
+                qRgb(55, 126, 184),  # 2
+                qRgb(77, 175, 74),   # 3
+                qRgb(228, 26, 28),   # 4
+                qRgb(152, 78, 163),  # 5
+                qRgb(255, 127, 0),   # 6
+                qRgb(13, 136, 250),  # 7
+                qRgb(247, 129, 191), # 8
+                qRgb(153, 153, 153)] # 9
+
+    colormap = [QColor("#000000"),
+                QColor("#f94144"), QColor("#f3722c"), QColor("#f8961e"),
+                QColor("#f9844a"), QColor("#f9c74f"), QColor("#90be6d"),
+                QColor("#43aa8b"), QColor("#4d908e"), QColor("#577590"),
+                QColor("#277da1")]
+
     h, w = img.shape[0], img.shape[1]
     qImg = QImage(img.astype(np.uint8).copy(), w,
                   h, w*1, QImage.Format_Indexed8)
                 #   h, w*3, QImage.Format_RGB888)
-    for i in range(k):
-        qImg.setColor(i, colormap[i])
+    for i in range(k + 1): # add 1 for the background
+        qImg.setColor(i, colormap[i % len(colormap)].rgba()) # use '%' to iterate the colormap
     return QPixmap(qImg)
 
 

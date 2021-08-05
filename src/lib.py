@@ -12,10 +12,13 @@ from scipy.signal      import spline_filter
 from scipy.signal      import convolve
 from scipy.signal      import convolve2d
 from scipy.signal      import find_peaks
+from skimage.measure   import block_reduce
 from sklearn.cluster   import AgglomerativeClustering
 from sklearn.neighbors import kneighbors_graph
 from sklearn.mixture   import GaussianMixture
-from PyQt5.QtGui       import QPixmap, QImage, QPaintDevice, QPainter, qRgb, QPen
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
+from PyQt5.QtGui import QPixmap, QImage, QPaintDevice, QPainter, qRgb, QColor, QPen
 from PyQt5.QtWidgets   import (QApplication, QPushButton, QWidget, QLabel, QSlider,
                                 QGridLayout,  QVBoxLayout, QHBoxLayout, QSizePolicy)
 from PyQt5.QtCore      import Qt, QTimer, QObject, QThread, pyqtSignal
@@ -45,9 +48,10 @@ def get_binary(signals, cut=.5, cutabs=None, upbound=1):
     return out
 
 
-def detect_imgs(imgs, frame, span=1, n_sd=3):
+def detect_imgs(imgs, frame, span=1):
     i = frame
     j = span
+    # stack 2*2 iamges: out_img is a 4-frame std image
     out_std = []
     for _ in range(2):
         out_std += [
@@ -57,9 +61,9 @@ def detect_imgs(imgs, frame, span=1, n_sd=3):
         j += 1
 
     out_img = sum(out_std) / len(out_std)
-    cutoff  = np.median(out_img) + (n_sd * np.std(out_img))
-    out     = get_binary(out_img, cutabs=cutoff)
-    return out
+    # cutoff  = np.median(out_img) + (n_sd * np.std(out_img))
+    # out     = get_binary(out_img, cutabs=cutoff)
+    return out_img
 
 # === === === === === === === QT === === === === === === ===
 
@@ -178,12 +182,51 @@ def process_signals(signals, n_smth=5, cut_sd=2, burnin=16):
     return signals_fx
 
 
-def do_k_means(img, k):
-    np_yx = find_nonzeros(img).astype(np.float32)
-    clusters, centers = cv_k_means(np_yx, k)
-    return clusters, centers, np_yx
+def do_k_means(imgs, i, k):
+    """
+    imgs: series number of images (video)
+    i: i frame image
+    k: number of k of clustering
+    """
+    # ## Version one: only yx coordinate
+    # pos_yx = find_nonzeros(imgs[i])
+
+    ## Version two: involve temporal, neighbor pixels, and yx coordinate
+    pos_yx = find_nonzeros(imgs[i])
+    # n: number of nonzero pixels
+    n = len(pos_yx)
+    # computer feature length: tp(8) + sp(4) + pos(2)
+    feature_length = 8 + 4 + 2
+    # pre-allocate data space
+    dt_features = np.zeros((n, feature_length), dtype=np.int)
+
+    for j in range(n):
+        # (y, x) coordinate
+        pos_y, pos_x = pos_yx[j]
+        # compute data cube for spatial or temporal analysis
+        block_sp = make_block(imgs, i, (pos_y, pos_x), size=(3, 3))
+        block_tp = make_block(imgs, i, (pos_y, pos_x), size=(2, 2, 2))
+        # if out of boundary, skip the rest steps
+        if (len(block_sp) == 0) or (len(block_tp) == 0):
+            continue
+        else:
+            # extract features from blocks
+            ft_tp = extract_features(block_tp, conv_type="temporal")
+            ft_sp = extract_features(block_sp, conv_type="spatial")
+            # concatenate features
+            dt_features[j] = np.concatenate([ft_tp, ft_sp, pos_yx[j]])
+    # remove out-of-boundary entry
+    dt_features = dt_features[np.sum(dt_features, axis=1) != 0]
+    # run k-mean by openCV
+    if (len(dt_features) >= k):
+        clusters, centers = cv_k_means(dt_features, k)
+        return clusters, centers, dt_features[:, -2:] # last 2 are yx coordinates
+    else:
+        return -1
+
 
 def cv_k_means(data, k):
+    data = data.astype(np.float32)
     criteria = (cv.TERM_CRITERIA_MAX_ITER, 10, 1.0)
     param_k = dict(data=data,
                    K=k,
@@ -263,3 +306,63 @@ def sort_by_dist(OUT, i):
 #             ls_dist += [distance(cts[i][k1], cts[i + 1][k2])]
 #     # return
 #     return ls_min
+
+
+def make_block(inputs, i, pos, size=(3, 3)):
+    """
+    inputs: n x h x w, n is number of frames
+    i: which focus frame
+    pos: (x, y)
+    """
+    pos_y, pos_x = pos
+    if len(size) == 3:
+        bin_t, bin_y, bin_x = size
+        block = inputs[(i - bin_t): (i + bin_t + 1),
+                       (pos_y - bin_y): (pos_y + bin_y + 1),
+                       (pos_x - bin_x): (pos_x + bin_x + 1)]
+    else:
+        bin_y, bin_x = size
+        block = inputs[i,
+                       (pos_y - bin_y): (pos_y + bin_y + 1),
+                       (pos_x - bin_x): (pos_x + bin_x + 1)]
+    return block
+
+
+def extract_features(block, conv_type="temporal"):
+    """
+    Return: 8 element features (temporal), or 4 element features (spatial)
+    """
+    if conv_type == "temporal":
+        # define kernel
+        kernel_t = np.array(
+            ([[[-1, -2, -1],
+               [-2, -4, -2],
+               [-1, -2, -1]],
+              [[2, 4, 2],
+               [4, 8, 4],
+               [2, 4, 2]],
+              [[-1, -2, -1],
+               [-2, -4, -2],
+               [-1, -2, -1]]]),
+            dtype='int')
+        # convolution
+        block_con = convolve(block, kernel_t, mode='same')
+        # max pooling
+        block_pool = block_reduce(block_con, (3, 3, 3), np.max)
+
+    elif conv_type == "spatial":
+        # define kernel
+        kernel_s = np.array(
+            ([[-1, -1, -1],
+              [-1,  8, -1],
+              [-1, -1, -1]]),
+            dtype='int')
+        # convolution
+        block_con = convolve(block, kernel_s, mode='same')
+        # max pooling
+        block_pool = block_reduce(block_con, (5, 5), np.max)
+
+    # flatten
+    block_1d = block_pool.reshape((-1))
+    # return
+    return block_1d

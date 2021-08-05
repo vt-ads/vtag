@@ -28,8 +28,10 @@ class VTags():
                         pred = None,
         )
 
-    def load(self, path=None, h5=None, n=-1):
-        if path is not None:
+    def load(self, path=".", h5=None, n=-1):
+        if h5 is not None:
+            self.ARGS, self.IMGS, self.OUTS = pickle.load(open(h5, "rb"))
+        else:
             # list files
             ls_imgs = os.listdir(path)
             ls_imgs.sort()
@@ -58,7 +60,7 @@ class VTags():
             self.IMGS["mov"]    = np.zeros((n, h, w), dtype=np.float32)
             self.IMGS["edg"]    = np.zeros((n, h, w), dtype=np.uint8)
 
-            self.OUTS["cts"]    = np.zeros((n, self.ARGS["k"], 2), dtype=np.int)
+            self.OUTS["cts"]    = np.zeros((n, self.ARGS["k"], 14), dtype=np.int) # 14 is: time(8)+spatial(4)+xy(2)
             self.OUTS["cls"]    = n * [None]
             self.OUTS["yx_edg"] = n * [None]
             self.OUTS["dist"]   = np.zeros((n, self.ARGS["k"]))
@@ -66,12 +68,9 @@ class VTags():
             self.OUTS["k_to_id"]= np.zeros((self.ARGS["k"]))
             self.OUTS["pred"]   = np.zeros((n, h, w), dtype=np.uint8)
 
-        elif h5 is not None:
-            self.ARGS, self.IMGS, self.OUTS = pickle.load(open(h5, "rb"))
 
     def run(self):
         self.detect_movements()
-        self.detect_edges()
         self.detect_edges()
         self.detect_clusters()
         self.sort_clusters()
@@ -85,6 +84,13 @@ class VTags():
 
         for i in range(n):
             imgs_mov[i] = detect_imgs(imgs_bw, i)
+
+        # binarize
+        std_matrix = imgs_mov[~np.isnan(imgs_mov).max(axis=(1, 2))]
+        cutoff = np.median(std_matrix) + (3 * np.std(std_matrix))
+        for i in range(n):
+            imgs_mov[i] = get_binary(imgs_mov[i], cutabs=cutoff)
+
 
     def detect_edges(self, n_denoise=5):
         k_edge = np.array((
@@ -120,12 +126,13 @@ class VTags():
 
         for i in range(n):
             try:
-                cls, cts, np_yx = do_k_means(imgs_edg[i], k)
+                cls, cts, np_yx = do_k_means(imgs_edg, i, k)
                 clusters[i] = cls
                 centers[i]  = cts
                 yx_edges[i] = np_yx
             except Exception as e:
-                None
+                print(e)
+
 
     def sort_clusters(self):
         '''
@@ -141,34 +148,36 @@ class VTags():
         for i in range(self.ARGS["n"] - 1): # the last frame is not applicable
             ls_min = []
 
-            # 0-0, 0-1, 0-2, 1-0, 1-1
-            for k1 in range(0, k - 1):
+            # if k = 3, 0-0, 0-1, 0-2, 1-1, 1-2
+            # Decide link k1 (i) to which k2 (i+1)
+            for k1 in range(0, k - 1): # frame i, cluster k1
                 ls_dist = []
 
-                for k2 in range(k1, k):
+                for k2 in range(k1, k): # frame i + 1, cluster k2
                     ls_dist += [distance(self.OUTS["cts"][i][k1],
                                          self.OUTS["cts"][i + 1][k2])]
                 # find min idx
                 val_min = np.min(ls_dist)
-                ls_min += [val_min]
                 idx_min = np.where(ls_dist == val_min)[0][0] + k1
+                ls_min += [val_min]
 
                 # swap centers at i+1
                 tmp = self.OUTS["cts"][i + 1][k1].copy()
                 self.OUTS["cts"][i + 1][k1] = self.OUTS["cts"][i + 1][idx_min]
                 self.OUTS["cts"][i + 1][idx_min] = tmp
 
-                # swap clustering i+1
-                if self.OUTS["cls"][i + 1] is not None:
+                # swap clustering i+1 on the position of k1 and idx_min
+                if self.OUTS["cls"][i + 1] is not None: # skipped for last frame
                     pos_k1  = self.OUTS["cls"][i + 1] == k1
                     pos_min = self.OUTS["cls"][i + 1] == idx_min
                     self.OUTS["cls"][i + 1][pos_k1] = idx_min
                     self.OUTS["cls"][i + 1][pos_min] = k1
 
             # compute the distance of the last k
+            # so that you will have length k vector for distance between i and i+1 
             ls_min += [distance(self.OUTS["cts"][i][k - 1],
-                                self.OUTS["cts"][i + 1][k - 1])]
-            # compute distances
+                                self.OUTS["cts"][i + 1][k - 1])] 
+            # store distances and direction
             self.OUTS["dist"][i + 1] = ls_min
             self.OUTS["dct"][i + 1]  = self.OUTS["cts"][i + 1] - self.OUTS["cts"][i]
 
@@ -204,8 +213,9 @@ class VTags():
                 pts = yx_edges[i].astype(np.int)
                 # show = show_k[i]
                 # which_id = (k_to_id * show)[clt]
-                which_id = k_to_id[clt]
-                pred[i][pts[:, 0], pts[:, 1]] = which_id
+                # which_id = k_to_id[clt]
+                # pred[i][pts[:, 0], pts[:, 1]] = which_id
+                pred[i][pts[:, 0], pts[:, 1]] = clts[i] + 1
 
 
     def save(self, h5):
