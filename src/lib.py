@@ -23,22 +23,6 @@ from PyQt5.QtWidgets   import (QApplication, QPushButton, QWidget, QLabel, QSlid
                                 QGridLayout,  QVBoxLayout, QHBoxLayout, QSizePolicy)
 from PyQt5.QtCore      import Qt, QTimer, QObject, QThread, pyqtSignal
 
-# def get_binary(signals, q):
-#     """
-#     Turn the iamge to 0 or upbound by the threashold cut
-#     """
-#     if (f0 < 0) or (f1 >= len(imgs)):
-#         out = np.zeros(imgs.shape[1:3])
-#     else:
-#         out_std = imgs[f0:f1].std(axis=(0, ))
-#         out_std[out_std < np.quantile(out_std, .9)] = 0
-#         out_std = (out_std - out_std.min()) * upbound / \
-#             (out_std.max() - out_std.min())
-#         thresh = upbound * cut
-#         _, out = cv.threshold(out_std, thresh, upbound, cv.THRESH_BINARY)
-
-#     return out.astype(np.uint8)
-
 def get_binary(signals, cut=.5, cutabs=None, upbound=1):
     if cutabs is None:
         _, out = cv.threshold(signals, np.quantile(
@@ -157,7 +141,6 @@ def drawCross(x, y, painter, size=2):
 
 def smooth_signals(signals, n, kernel=-1):
     if kernel == -1:
-        # kernel = np.array(([1, 2, 4, 8, 12, 16, 12, 8, 4, 2, 1]), dtype='int') / 70
         kernel = np.array(
             ([1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1]), dtype='int') / 16
 
@@ -188,10 +171,7 @@ def do_k_means(imgs, i, k):
     i: i frame image
     k: number of k of clustering
     """
-    # ## Version one: only yx coordinate
-    # pos_yx = find_nonzeros(imgs[i])
-
-    ## Version two: involve temporal, neighbor pixels, and yx coordinate
+    ## temporal, neighbor pixels, and yx coordinate
     pos_yx = find_nonzeros(imgs[i])
     # n: number of nonzero pixels
     n = len(pos_yx)
@@ -248,64 +228,6 @@ def distance(pt1, pt2, is_dir=False):
         return distance, direction
     else:
         return distance
-
-def sort_by_dist(OUT, i):
-    '''
-    Sort k centers in cts[i + 1] based on distance between (i) and (i + 1)
-    args
-        i  : ith frame
-    Time complexity O = (k-1)^2
-    '''
-    k = OUT["k"]
-    if i == (len(OUT["centers"]) - 1):
-        return OUT
-
-    ls_min = []
-    # 0-0, 0-1, 0-2, 1-0, 1-1
-    for k1 in range(0, k - 1):
-        ls_dist = []
-        for k2 in range(k1, k):
-            ls_dist += [distance(OUT["centers"][i][k1],
-                                 OUT["centers"][i + 1][k2])]
-        # find min idx
-        val_min = np.min(ls_dist)
-        ls_min  += [val_min]
-        idx_min = np.where(ls_dist == val_min)[0][0] + k1
-        # swap centers at i+1
-        tmp                            = OUT["centers"][i + 1][k1].copy()
-        OUT["centers"][i + 1][k1]      = OUT["centers"][i + 1][idx_min]
-        OUT["centers"][i + 1][idx_min] = tmp
-        # swap clustering i+1
-        if OUT["clusters"][i + 1] is not None:
-            pos_k1  = OUT["clusters"][i + 1] == k1
-            pos_min = OUT["clusters"][i + 1] == idx_min
-            OUT["clusters"][i + 1][pos_k1]   = idx_min
-            OUT["clusters"][i + 1][pos_min]  = k1
-
-    # compute the distance of the last k
-    ls_min += [distance(OUT["centers"][i][k - 1],
-                        OUT["centers"][i + 1][k - 1])]
-    # return
-    OUT["distance"][i]   = ls_min
-    OUT["directions"][i] = OUT["centers"][i + 1] - OUT["centers"][i]
-    return OUT
-
-# No swap
-# def sort_by_dist(cts, i, k):
-#     '''
-#     Sort k centers in cts[i + 1] based on distance between (i) and (i + 1)
-#     Time complexity O = (k-1)^2
-#     '''
-#     if i == (len(cts) - 1):
-#         return cts, k * [0]
-
-#     ls_min = []
-#     for k1 in range(k):
-#         ls_dist = []
-#         for k2 in range(k):
-#             ls_dist += [distance(cts[i][k1], cts[i + 1][k2])]
-#     # return
-#     return ls_min
 
 
 def make_block(inputs, i, pos, size=(3, 3)):
@@ -366,3 +288,30 @@ def extract_features(block, conv_type="temporal"):
     block_1d = block_pool.reshape((-1))
     # return
     return block_1d
+
+
+def map_features_to_id(features, k):
+    # PCA on 14 features
+    pcs = PCA(2).fit_transform(features)
+    ids, _ = cv_k_means(pcs, k + 1)
+
+    # re-order, put minority into backgorund(0)
+    # count values
+    value_counts = pd.value_counts(ids)
+
+    # find which key occur minimum
+    idx_min = np.where(value_counts == min(value_counts))[0][0]
+    keys = value_counts.keys()
+    key_min = keys[idx_min]
+    key_rest = keys[keys != key_min]
+
+    # re-assign
+    new_ids = np.array([0] * len(ids))
+    for i in range(len(key_rest)):
+        assign_key = key_rest[i]
+        assign_pos = np.where(ids == assign_key)[0]
+        new_ids[assign_pos] = i + 1
+
+    # return
+    return new_ids
+

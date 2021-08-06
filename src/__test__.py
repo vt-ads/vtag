@@ -1,4 +1,3 @@
-from pandas.core.dtypes.missing import isnull
 from lib import *
 from Tags import VTags
 
@@ -17,77 +16,45 @@ os.chdir(path_project + dataname)
 # self.map_k_to_id()
 # self.make_predictions()
 
-# First Run
-app = VTags(k=1, n_tags=10)
-app.load()
-app.run()
-app.save("model.h5")
+# # First Run
+# app = VTags(k=1, n_tags=10)
+# app.load()
+# app.run()
+# app.save("model.h5")
 
-# Detail run small
-app = VTags(k=1, n_tags=10)
-app.load()
-app.detect_movements()
-app.detect_edges()
-app.save("model2.h5")
+# # Detail run small
+# app = VTags(k=1, n_tags=10)
+# app.load()
+# app.detect_movements()
+# app.detect_edges()
+# app.save("model2.h5")
 
 ## Resume run
 app = VTags(k=1)
 app.load(h5="model.h5")
 
-
 # Test features
-features = app.OUTS["cts"][201]
-# features = StandardScaler().fit_transform(features)
-
-
-pca = PCA(2)
-pcs = pca.fit_transform(features)
-plt.scatter(pcs[:, 0], pcs[:, 1])
-
-cv_k_means(pcs, 2)
-pcs
+# app.map_k_to_id()
+app.make_predictions()
+app.save(h5="model.h5")
 
 
 
+clts     = app.OUTS["cls"]
+pos_yx = app.OUTS["pos_yx"]
+k_to_id  = app.OUTS["k_to_id"]
+pred     = app.OUTS["pred"]
+n = app.ARGS["n"]
+i = 30
 
+clt = clts[i]
+pts = pos_yx[i].astype(np.int)
+# show = show_k[i]
+# which_id = (k_to_id * show)[clt]
+which_id = k_to_id[i][clt]
+pred[i][pts[:, 0], pts[:, 1]] = which_id
 
-
-
-pca.pre(features)
-
-pca.components_
-
-
-# Test
-cls = app.OUTS["pred"]
-n_c = len(cls)
-
-
-[len(pd.value_counts(cls[30].reshape(-1))) for i in range(n_c)]
-
-plt.scatter(range(len(y)), y)
-
-
-int(np.max(imgs_mov))
-
-
-imgs_mov = app.IMGS["mov"]
-imgs_bw  = app.IMGS["bw"]
-n        = app.ARGS["n"]
-
-for i in range(n):
-    imgs_mov[i] = detect_imgs(imgs_bw, i)
-
-std_matrix = imgs_mov[~np.isnan(imgs_mov).max(axis=(1, 2))]
-cutoff = np.median(std_matrix) + (3 * np.std(std_matrix))
-for i in range(n):
-    imgs_mov[i] = get_binary(imgs_mov[i], cutabs=cutoff)
-
-np.median(imgs_mov)
-np.sum(imgs_mov)
-
-
-
+which_id.shape
 
 
 plt.imshow(app.IMGS[""])
@@ -98,50 +65,13 @@ imgs = app.IMGS["edg"]
 
 do_k_means(imgs, 50, 10)
 
+features = app.OUTS["cts"]
+
+map_features_to_id(features[0], 1)
+
 
 i = 0
 k = 10
-
-def do_k_means(imgs, i, k):
-    """
-    imgs: series number of images (video)
-    i: i frame image
-    k: number of k of clustering
-    """
-    # ## Version one: only yx coordinate
-    # pos_yx = find_nonzeros(imgs[i])
-
-## Version two: involve temporal, neighbor pixels, and yx coordinate
-pos_yx = find_nonzeros(imgs[i])
-# n: number of nonzero pixels
-n = len(pos_yx)
-# computer feature length: tp(8) + sp(4) + pos(2)
-feature_length = 8 + 4 + 2
-# pre-allocate data space
-dt_features = np.zeros((n, feature_length), dtype=np.int)
-
-for j in range(n):
-    # (y, x) coordinate
-    pos_y, pos_x = pos_yx[j]
-    # compute data cube for spatial or temporal analysis
-    block_sp = make_block(imgs, i, (pos_y, pos_x), size=(3, 3))
-    block_tp = make_block(imgs, i, (pos_y, pos_x), size=(2, 2, 2))
-    # if out of boundary, skip the rest steps
-    if (len(block_sp) == 0) or (len(block_tp) == 0):
-        continue
-    else:
-        # extract features from blocks
-        ft_tp = extract_features(block_tp, conv_type="temporal")
-        ft_sp = extract_features(block_sp, conv_type="spatial")
-        # concatenate features
-        dt_features[j] = np.concatenate([ft_tp, ft_sp, pos_yx[j]])
-# remove out-of-boundary entry
-dt_features = dt_features[np.sum(dt_features, axis=1) != 0]
-if (len(dt_features) >= k):
-# run k-mean by openCV
-clusters, centers = cv_k_means(dt_features, k)
-
-return clusters, centers, dt_features[:, -2:] # last 2 are yx coordinates
 
 
 
