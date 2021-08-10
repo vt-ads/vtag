@@ -63,6 +63,7 @@ class VTags():
             self.OUTS["pos_yx"] = n * [None]
             self.OUTS["k_to_id"]= np.zeros((n, self.ARGS["k"]))
             self.OUTS["pred"]   = np.zeros((n, h, w), dtype=np.uint8)
+            self.OUTS["pred_cls"] = np.zeros((n, h, w), dtype=np.uint8)
 
 
     def run(self):
@@ -89,7 +90,7 @@ class VTags():
         for i in range(n):
             imgs_mov[i] = get_binary(imgs_mov[i], cutabs=cutoff)
 
-    def detect_edges(self, n_denoise=10):
+    def detect_edges(self, n_denoise=5):
         '''
         '''
         imgs_mov = self.IMGS["mov"]
@@ -114,6 +115,9 @@ class VTags():
                 conv = convolve2d(conv, k_gauss, mode="same")
                 conv = get_binary(conv, cutabs=.5)
             imgs_edg[i] = conv
+
+        # create reduncdent pixel
+        imgs_edg[:, 10:20, 10:20] = 1 # in the feature it's (14, 14)
 
     def detect_clusters(self):
         '''
@@ -140,10 +144,10 @@ class VTags():
         '''
         n        = self.ARGS["n"]
         k        = self.ARGS["n_id"]
-        features = self.OUTS["cts"]
+        features_all = self.OUTS["cts"]
 
         for i in range(n):
-            self.OUTS["k_to_id"][i] = map_features_to_id(features[i], k)
+            self.OUTS["k_to_id"][i] = map_features_to_id(features_all[i], k)
 
 
     def make_predictions(self):
@@ -153,17 +157,21 @@ class VTags():
         pos_yx   = self.OUTS["pos_yx"]
         k_to_id  = self.OUTS["k_to_id"]
         pred     = self.OUTS["pred"]
+        pred_clt = self.OUTS["pred_cls"]
+
         n        = self.ARGS["n"]
 
         for i in range(n):
             if clts[i] is not None:
                 clt = clts[i]
                 pts = pos_yx[i].astype(np.int)
-                # show = show_k[i]
-                # which_id = (k_to_id * show)[clt]
+
+                # show prediction
                 which_id = k_to_id[i][clt]
                 pred[i][pts[:, 0], pts[:, 1]] = which_id
-                # pred[i][pts[:, 0], pts[:, 1]] = clts[i] + 1
+
+                ## show clusters
+                pred_clt[i][pts[:, 0], pts[:, 1]] = clts[i] + 1
 
 
     def save(self, h5="model.h5"):

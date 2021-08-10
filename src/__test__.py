@@ -12,31 +12,230 @@ os.chdir(path_project + dataname)
 # self.detect_movements()
 # self.detect_edges()
 # self.detect_clusters()
-# self.sort_clusters()
 # self.map_k_to_id()
 # self.make_predictions()
 
-# # First Run
+# First Run
 # app = VTags(k=1, n_tags=10)
 # app.load()
 # app.run()
 # app.save("model.h5")
 
-# # Detail run small
+# Detail run small
 # app = VTags(k=1, n_tags=10)
 # app.load()
 # app.detect_movements()
 # app.detect_edges()
-# app.save("model2.h5")
+# app.save("model.h5")
 
-## Resume run
+# Resume run
 app = VTags(k=1)
 app.load(h5="model.h5")
 
 # Test features
-# app.map_k_to_id()
+app.map_k_to_id()
 app.make_predictions()
-app.save(h5="model.h5")
+app.save()
+
+
+number_group = QtGui.QButtonGroup(QWidget())  # Number group
+r0=QtGui.QRadioButton("0")
+number_group.addButton(r0)
+r1=QtGui.QRadioButton("1")
+number_group.addButton(r1)
+layout.addWidget(r0)
+
+toggles
+dict(edges=QRadioButton("Edges"),
+     cls=QRadioButton("Clusters"),
+     pre=QRadioButton("Predictions"))
+
+
+
+
+i, k = 283, 1
+
+features = app.OUTS["cts"]
+
+i = 12
+plt.imshow(app.OUTS["pred_cls"][i])
+
+for i in range(300):
+    map_features_to_id(features[i], k)
+
+
+pca = PCA(2)
+pca.fit(features[i])
+pcs = pca.transform(features[i]) * pca.explained_variance_ratio_
+
+ids, _ = cv_k_means(pcs, k + 1)
+
+# get collection of cluster numbers
+value_counts = pd.value_counts(ids)
+keys = value_counts.keys()
+
+n_ft = len(features[i])
+new_ids = np.array([0] * n_ft)
+
+major = 0
+#-- clean outliers and include missed
+for major in keys:
+    # remove outliers
+    idx_maj = np.where(ids == major)[0]
+
+    if len(idx_maj) == 1:
+        new_ids[idx_maj] = major
+
+    else:
+        pts_maj, keep_idx_maj = remove_outliers(pcs[idx_maj])
+
+        # update majority idx
+        idx_out = idx_maj[~keep_idx_maj]
+        idx_maj = idx_maj[keep_idx_maj]
+
+        # new center of majority
+        mid_maj = np.median(pts_maj, axis=0)
+
+        # distance to the center of each points
+        dist    = np.array([distance(pcs[i], mid_maj) for i in range(len(pcs))])
+
+        ids_tmp, _ = cv_k_means(dist, 2) # either belong to major group (1) or not (0)
+        ids_tmp    = reassign_id_by(ids_tmp, dist, by="value")
+
+        new_ids[ids_tmp == 1] = major
+        new_ids[idx_out] = -1
+
+
+new_ids = reassign_id_by(new_ids, values=pcs, by="size")
+new_ids[idx_out] = 0
+
+
+
+plt.scatter(pcs[ids==0, 0], pcs[ids==0, 1])
+plt.scatter(pcs[ids==1, 0], pcs[ids==1, 1])
+
+plt.scatter(pcs[new_ids==0, 0], pcs[new_ids==0, 1])
+plt.scatter(pcs[new_ids==1, 0], pcs[new_ids==1, 1])
+
+
+
+
+
+pcs = PCA(2).fit_transform(features[i])
+ids, _ = cv_k_means(pcs, k + 1)
+
+
+
+
+major = 0
+# remove outliers
+idx_maj = np.where(ids==major)[0]
+pts_maj, keep_maj = remove_outliers(pcs[idx_maj])
+
+# update idx
+idx_maj = idx_maj[keep_maj]
+
+mid_maj = np.median(pts_maj, axis=0)
+dist = np.array([distance(pcs[i], mid_maj) for i in range(len(pcs))])
+
+dist[idx_maj]
+plt.scatter(range(10), dist)
+
+new_ids, _ = cv_k_means(dist, 2)
+
+
+
+n_k = pd.value_counts(new_ids).keys()
+dist = []
+for i in n_k:
+    pts = pcs[new_ids == i]
+    pt_ct = np.median(pts, axis=0)
+    dist_pts = []
+    for pt in pts:
+        dist_pts += [distance(pt, pt_ct)]
+    dist += [np.mean(dist_pts)]
+
+
+
+
+
+
+
+plt.scatter(pcs[new_ids==0, 0], pcs[new_ids==0, 1])
+plt.scatter(pcs[new_ids==1, 0], pcs[new_ids==1, 1])
+
+
+
+# app.map_k_to_id()
+
+
+#####
+plt.imshow(app.IMGS["edg"][30])
+
+plt.imshow(app.IMGS["edg"][30][120:130, 340:350])
+
+app.IMGS["edg"][30][120:130, 340:350]
+img = app.IMGS["edg"][30]
+find_nonzeros(img)
+
+
+app.OUTS["cls"]
+xy = app.OUTS["pos_yx"]
+np.sum(xy[4] == 0)
+
+
+
+
+n= app.ARGS["n"]
+k = app.ARGS["n_id"]
+features_all = app.OUTS["cts"]
+edd = app.IMGS["edg"]
+edd[:, 0, 0] = 1
+
+
+edd[30]
+i = 30
+
+clusters = map_features_to_id(features_all[i], k)
+c1 = features_all[i][clusters==0].mean(axis=0)
+c2 = features_all[i][clusters==1].mean(axis=0)
+
+
+idx_sel = [12, 13]
+dist = []
+for i in range(300):
+    clusters = map_features_to_id(features_all[i], k, use_pca=False)
+    c1 = features_all[i][clusters == 0][:, idx_sel].mean(axis=0)
+    c2 = features_all[i][clusters == 1][:, idx_sel].mean(axis=0)
+    dist += [distance(c1, c2)]
+
+
+plt.plot(dist)
+dist = np.array(dist)
+np.median(dist[dist!=0])
+np.std(dist[dist!=0])
+dist[131]
+
+
+# re-order, put minority into backgorund(0)
+# count values
+value_counts = pd.value_counts(ids)
+
+# find which key occur minimum
+idx_min = np.where(value_counts == min(value_counts))[0][0]
+keys = value_counts.keys()
+key_min = keys[idx_min]
+key_rest = keys[keys != key_min]
+
+# re-assign
+new_ids = np.array([0] * len(ids))
+for i in range(len(key_rest)):
+    assign_key = key_rest[i]
+    assign_pos = np.where(ids == assign_key)[0]
+    new_ids[assign_pos] = i + 1
+
+
+    
 
 
 

@@ -3,22 +3,19 @@ from Tags import VTags
 
 
 class Player(QWidget):
-    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig"):
-    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/group"):
-    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/ppl"):
-    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/group_small"):
-    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_small"):
-    # def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data/one_pig_all"):
+    def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data"):
         super().__init__()
 
         # WD
+        dataname = "one_pig"
         os.chdir(folder)
+        os.chdir(dataname)
 
         # Predictions
-        self.img_bin = []
+        self.imgs_show = []
         # Frames
         self.folder  = folder
-        self.paths   = ls_files(folder)
+        self.paths   = ls_files()
         self.frame   = QFrame()
         self.n_frame = len(self.paths)
         self.i_frame = 0
@@ -43,19 +40,24 @@ class Player(QWidget):
                             play  = QPushButton("Play"),
                             next  = QPushButton("Next frame > "),
                             prev  = QPushButton("< Previous frame"))
+        self.toggles = dict(edges = QRadioButton("Edges"),
+                            cls   = QRadioButton("Clusters"),
+                            pre   = QRadioButton("Predictions"))
         self.playback = QSlider(Qt.Horizontal, self)
 
+        # VTags
+        self.app = VTags()
+
         # init
-        self.compute()
+        self.init_VTags()
         self.update_frames()
         self.initRuntime()
         self.initUI()
 
-    def compute(self):
-        app = VTags()
-        app.load(h5="model.h5")
-        self.img_bin = app.OUTS["pred"] ### define what show on the screen
-        # self.img_bin = app.IMGS["edg"]  ### define what show on the screen
+    def init_VTags(self):
+        self.app.load(h5="model.h5")
+        self.toggles["pre"].setChecked(True)
+        self.imgs_show = self.app.OUTS["pred"] ### define what show on the screen
 
     def initRuntime(self):
         self.timer.timeout.connect(self.next_frames)
@@ -63,9 +65,24 @@ class Player(QWidget):
             lambda x: self.change_status(not self.is_play))
         self.buttons["next"].clicked.connect(self.next_frames)
         self.buttons["prev"].clicked.connect(self.prev_frames)
+        self.toggles["edges"].clicked.connect(self.toggle)
+        self.toggles["cls"].clicked.connect(self.toggle)
+        self.toggles["pre"].clicked.connect(self.toggle)
         self.playback.valueChanged.connect(self.traverse_frames)
         self.sli_span.valueChanged.connect(self.change_span)
         self.sli_thre.valueChanged.connect(self.change_thre)
+
+    def toggle(self):
+        if self.toggles["edges"].isChecked():
+            self.imgs_show = self.app.IMGS["edg"]
+
+        elif self.toggles["cls"].isChecked():
+            self.imgs_show = self.app.OUTS["pred_cls"]
+
+        elif self.toggles["pre"].isChecked():
+            self.imgs_show = self.app.OUTS["pred"]
+
+        self.update_frames()
 
     def initUI(self):
         # Slider
@@ -101,7 +118,9 @@ class Player(QWidget):
         layout.addWidget(self.frame,             1, 0, 1, 3, alignment=Qt.AlignCenter)
         layout.addWidget(self.lb_frame,          2, 0, 1, 3)
         layout.addWidget(self.playback,          3, 0, 1, 3)
-        # layout.addWidget(self.lb_span,           4, 0, 1, 3)
+        layout.addWidget(self.toggles["edges"],  4, 0)
+        layout.addWidget(self.toggles["cls"],  4, 1)
+        layout.addWidget(self.toggles["pre"],  4, 2)
         # layout.addWidget(self.sli_span,          5, 0, 1, 3)
         # layout.addWidget(self.lb_thre,           6, 0, 1, 3)
         # layout.addWidget(self.sli_thre,          7, 0, 1, 3)
@@ -134,7 +153,7 @@ class Player(QWidget):
         self.lb_frame.setText("Frame: %d" % i)
         self.frame.setPixmap(QPixmap(self.paths[i]))
         # self.frame.set_center(self.cx[i], self.cy[i])
-        self.frame.set_predict(self.img_bin[i])
+        self.frame.set_predict(self.imgs_show[i])
         self.frame.repaint()
 
     def change_span(self):
@@ -233,6 +252,7 @@ def getIdx8QImg(img, k):
                 qRgb(153, 153, 153)] # 9
 
     colormap = [QColor("#000000"),
+                QColor(255, 255, 51),
                 QColor("#f94144"), QColor("#f3722c"), QColor("#f8961e"),
                 QColor("#f9844a"), QColor("#f9c74f"), QColor("#90be6d"),
                 QColor("#43aa8b"), QColor("#4d908e"), QColor("#577590"),

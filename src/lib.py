@@ -18,10 +18,12 @@ from sklearn.neighbors import kneighbors_graph
 from sklearn.mixture   import GaussianMixture
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from PyQt5.QtGui import QPixmap, QImage, QPaintDevice, QPainter, qRgb, QColor, QPen
-from PyQt5.QtWidgets   import (QApplication, QPushButton, QWidget, QLabel, QSlider,
-                                QGridLayout,  QVBoxLayout, QHBoxLayout, QSizePolicy)
-from PyQt5.QtCore      import Qt, QTimer, QObject, QThread, pyqtSignal
+from PyQt5.QtGui import (QPixmap, QImage, QPaintDevice, QPainter,
+                         qRgb, QColor, QPen)
+from PyQt5.QtWidgets import (QApplication, QPushButton, QWidget, QLabel, QSlider,
+                                QGridLayout,  QVBoxLayout, QHBoxLayout, QSizePolicy,
+                             QButtonGroup, QRadioButton)
+from PyQt5.QtCore import Qt, QTimer, QObject, QThread, pyqtSignal
 
 def get_binary(signals, cut=.5, cutabs=None, upbound=1):
     if cutabs is None:
@@ -58,7 +60,7 @@ def np2qt(img):
     return qImg
 
 
-def ls_files(path):
+def ls_files(path="."):
     ls_imgs = os.listdir(path)
     ls_imgs.sort()
     return [f for f in ls_imgs if ".png" in f]
@@ -290,28 +292,127 @@ def extract_features(block, conv_type="temporal"):
     return block_1d
 
 
-def map_features_to_id(features, k):
-    # PCA on 14 features
-    pcs = PCA(2).fit_transform(features)
-    ids, _ = cv_k_means(pcs, k + 1)
+def map_features_to_id(features, k, use_pca=False):
+    n_ft = len(features)
+    new_ids = np.array([0] * n_ft)
 
-    # re-order, put minority into backgorund(0)
-    # count values
-    value_counts = pd.value_counts(ids)
+    if np.mean(features) == 0:
+        return new_ids
 
-    # find which key occur minimum
-    idx_min = np.where(value_counts == min(value_counts))[0][0]
+    else:
+        #-- Get PCs from features, and cluster into k+1 groups
+        pcs = PCA(2).fit_transform(features)
+        ids, _ = cv_k_means(pcs, k + 1)
+
+        # get collection of cluster numbers
+        value_counts = pd.value_counts(ids)
+        keys = value_counts.keys()
+
+        #-- clean outliers and include missed
+        for major in keys:
+            # remove outliers
+            idx_maj = np.where(ids == major)[0]
+
+            if len(idx_maj) == 1:
+                new_ids[idx_maj] = major
+
+            else:
+                pts_maj, keep_idx_maj = remove_outliers(pcs[idx_maj])
+
+                # update majority idx
+                idx_out = idx_maj[~keep_idx_maj]
+                idx_maj = idx_maj[keep_idx_maj]
+
+                # new center of majority
+                mid_maj = np.median(pts_maj, axis=0)
+
+                # distance to the center of each points
+                dist = np.array([distance(pcs[i], mid_maj) for i in range(len(pcs))])
+
+                # either belong to major group (1) or not (0)
+                ids_tmp, _ = cv_k_means(dist, 2)
+                ids_tmp = reassign_id_by(ids_tmp, dist, by="value")
+
+                new_ids[ids_tmp == 1] = major
+                new_ids[idx_out] = -1
+
+        # finalize new ids
+        new_ids = reassign_id_by(new_ids, values=pcs, by="size")
+        new_ids[idx_out] = 0
+
+        # return
+        return new_ids
+
+
+def reassign_id_by(old_ids, values=None, by="size"):
+    # pre-allocate new ids
+    new_ids = np.array([0] * len(old_ids))
+
+    # get collection of cluster properties
+    n_ids = len(old_ids)
+    value_counts = pd.value_counts(old_ids)
     keys = value_counts.keys()
-    key_min = keys[idx_min]
-    key_rest = keys[keys != key_min]
 
-    # re-assign
-    new_ids = np.array([0] * len(ids))
+    # two strategies
+    if by == "size":
+        "Cluster with smallest size will be assigned to '0'"
+        # find which key occur minimum
+        idx_remove = np.where(value_counts == np.min(value_counts))[0][0]
+
+    elif by == "distance":
+        "Cluster with largest averaged distance from its center will be assigned to '0'"
+        "Also consider size"
+        dist = []
+        for i in keys:
+            # computer cluster center
+            pts = values[old_ids == i]
+            pt_ct = np.median(pts, axis=0)
+            # calculate averaged distance
+            dist_pts = []
+            for pt in pts:
+                dist_pts += [distance(pt, pt_ct)]
+            dist += [np.mean(dist_pts)]
+
+        # find which key has largest distance and smallest numbers
+        scores = -np.array(dist) * (n_ids - value_counts)
+        print("keys: ", keys)
+        print("dist: ", dist)
+        print("counts: ", value_counts)
+        print("scores: ", scores)
+        idx_remove = np.where(scores == np.min(scores))[0][0]
+
+    elif by == "value":
+        "Cluster with largest values will be assigned to '0'"
+        med_values = [np.median(values[old_ids == i]) for i in keys]
+        idx_remove = np.where(med_values == max(med_values))[0][0]
+
+    # find which clusters to keep
+    key_remove = keys[idx_remove]
+    key_rest   = keys[keys != key_remove]
+
+    # re-assign: 0-> background, others-> majority
     for i in range(len(key_rest)):
         assign_key = key_rest[i]
-        assign_pos = np.where(ids == assign_key)[0]
+        assign_pos = np.where(old_ids == assign_key)[0]
         new_ids[assign_pos] = i + 1
 
-    # return
+
     return new_ids
 
+
+def remove_outliers(pts, out_std=2):
+    n_pts = len(pts)
+
+    if n_pts > 2:
+        dist = []
+        for i in range(len(pts)):
+            idx = [k for k in range(n_pts) if k != i]
+            mid_maj = np.median(pts[idx], axis=0)
+            dist += [distance(pts[i], mid_maj)]
+
+        idx_keep = dist < np.median(dist) + np.std(dist) * out_std
+
+        return pts[idx_keep], idx_keep
+
+    else:
+        return pts, np.array([True] * 2)
