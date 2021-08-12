@@ -6,6 +6,7 @@ import copy
 import pickle
 import cv2 as cv
 import matplotlib.pyplot as plt
+import pyqtgraph as pg
 import pandas as pd
 import numpy  as np
 from scipy.signal      import spline_filter
@@ -16,14 +17,17 @@ from skimage.measure   import block_reduce
 from sklearn.cluster   import AgglomerativeClustering
 from sklearn.neighbors import kneighbors_graph
 from sklearn.mixture   import GaussianMixture
+from sklearn.linear_model import LinearRegression
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 from PyQt5.QtGui import (QPixmap, QImage, QPaintDevice, QPainter,
-                         qRgb, QColor, QPen)
+                         qRgb, QColor, QPen, QBrush)
 from PyQt5.QtWidgets import (QApplication, QPushButton, QWidget, QLabel, QSlider,
                                 QGridLayout,  QVBoxLayout, QHBoxLayout, QSizePolicy,
                              QButtonGroup, QRadioButton)
 from PyQt5.QtCore import Qt, QTimer, QObject, QThread, pyqtSignal
+
+# === === === === === === === QT === === === === === === ===
 
 def get_binary(signals, cut=.5, cutabs=None, upbound=1):
     if cutabs is None:
@@ -47,8 +51,6 @@ def detect_imgs(imgs, frame, span=1):
         j += 1
 
     out_img = sum(out_std) / len(out_std)
-    # cutoff  = np.median(out_img) + (n_sd * np.std(out_img))
-    # out     = get_binary(out_img, cutabs=cutoff)
     return out_img
 
 # === === === === === === === QT === === === === === === ===
@@ -177,11 +179,10 @@ def do_k_means(imgs, i, k):
     pos_yx = find_nonzeros(imgs[i])
     # n: number of nonzero pixels
     n = len(pos_yx)
-    # computer feature length: tp(8) + sp(4) + pos(2)
-    feature_length = 8 + 4 + 2
+    # computer feature length: tp(8) + sp(4) + pos(12)
+    feature_length = 24
     # pre-allocate data space
     dt_features = np.zeros((n, feature_length), dtype=np.int)
-
     for j in range(n):
         # (y, x) coordinate
         pos_y, pos_x = pos_yx[j]
@@ -196,15 +197,57 @@ def do_k_means(imgs, i, k):
             ft_tp = extract_features(block_tp, conv_type="temporal")
             ft_sp = extract_features(block_sp, conv_type="spatial")
             # concatenate features
-            dt_features[j] = np.concatenate([ft_tp, ft_sp, pos_yx[j]])
+            n_conv = len(ft_tp) + len(ft_sp)
+            ft_yx = list(pos_yx[j]) * (n_conv // 2) # make yx same length as conv
+            dt_features[j] = np.concatenate([ft_tp, ft_sp, ft_yx])
     # remove out-of-boundary entry
-    dt_features = dt_features[np.sum(dt_features, axis=1) != 0]
+    idx_keep = np.sum(dt_features, axis=1) != 0
+    dt_features = dt_features[idx_keep]
+    yx = pos_yx[idx_keep]
+    # scale features
+    dt_features = scale2D(dt_features)
     # run k-mean by openCV
     if (len(dt_features) >= k):
-        clusters, centers = cv_k_means(dt_features, k)
-        return clusters, centers, dt_features[:, -2:] # last 2 are yx coordinates
+        clusters, _ = cv_k_means(yx, k)
+        centers = np.zeros((k, feature_length))
+        for i in range(k):
+            centers[i] = np.mean(dt_features[clusters == i], axis=0)
+
+        return clusters, centers, yx  # last 2 are yx coordinates
     else:
         return -1
+
+
+def cluster_by_coordinates(imgs, i, k):
+    """
+    imgs: series number of images (video)
+    i: i frame image
+    k: number of k of clustering
+    """
+    pos_yx = find_nonzeros(imgs[i])
+    n = len(pos_yx)
+
+
+
+def cluster_by_structure(data, yx, k):
+    # collect info
+    n, p = data.shape
+    n_neighbor = int(len(data) * .1)
+    # define structure
+    structure = kneighbors_graph(yx, n_neighbor)
+    # clustering
+    model     = AgglomerativeClustering(linkage="ward",  # average, complete, ward, single
+                                        connectivity=structure,
+                                        n_clusters=k)
+    model.fit(data)
+    # get output labels
+    clusters = model.labels_
+    # compute centers
+    centers  = np.zeros((k, p))
+    for i in range(k):
+        centers[i] = np.mean(data[clusters == i], axis=0)
+    # return
+    return clusters, centers
 
 
 def cv_k_means(data, k):
@@ -292,17 +335,25 @@ def extract_features(block, conv_type="temporal"):
     return block_1d
 
 
+def scale2D(data):
+    mean = np.mean(data, axis=0)
+    std = np.std(data, axis=0)
+    return (data - mean) / std
+
 def map_features_to_id(features, k, use_pca=False):
     n_ft = len(features)
     new_ids = np.array([0] * n_ft)
 
     if np.mean(features) == 0:
-        return new_ids
+        fake_pcs = np.zeros((len(features), 2))
+        return new_ids, fake_pcs
 
     else:
         #-- Get PCs from features, and cluster into k+1 groups
-        pcs = PCA(2).fit_transform(features)
-        ids, _ = cv_k_means(pcs, k + 1)
+        pca = PCA(2)
+        pca.fit(features)
+        pcs = pca.transform(features) * pca.explained_variance_ratio_
+        ids, _ = cv_k_means(features, k + 1)
 
         # get collection of cluster numbers
         value_counts = pd.value_counts(ids)
@@ -341,7 +392,7 @@ def map_features_to_id(features, k, use_pca=False):
         new_ids[idx_out] = 0
 
         # return
-        return new_ids
+        return new_ids, pcs
 
 
 def reassign_id_by(old_ids, values=None, by="size"):
@@ -415,4 +466,33 @@ def remove_outliers(pts, out_std=2):
         return pts[idx_keep], idx_keep
 
     else:
-        return pts, np.array([True] * 2)
+        return pts, np.array([True] * n_pts)
+
+
+def cluster_gm(data, k, weights=None):
+    gm = GaussianMixture(n_components=k,
+                        max_iter=5000,
+                         weights_init=weights,
+                        init_params="kmeans",
+                        tol=1e-4)
+    return gm.fit_predict(data)
+
+
+def fit_linear(pts):
+    """
+    pts[:, 0]: X
+    pts[:, 1]: y
+    ax + by + c = 0
+    """
+    reg = LinearRegression().fit(pts[:, 0].reshape(-1, 1), pts[:, 1])
+    slope = reg.coef_[0]
+    intercept = reg.intercept_
+    a = slope
+    b = -1
+    c = intercept
+
+    return a, b, c,
+
+
+def distance_to_line(a, b, c, x, y):
+    return np.abs(a*x + b*y + c) / (a**2 + b**2)**.5

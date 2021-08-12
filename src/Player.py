@@ -1,6 +1,9 @@
 from lib import *
 from Tags import VTags
 
+colorsets = np.array(["#000000", "#ffff33", "#f94144", "#f3722c", "#f8961e",
+                      "#f9844a", "#f9c74f", "#90be6d", "#43aa8b", "#4d908e",
+                      "#577590", "#277da1"])
 
 class Player(QWidget):
     def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data"):
@@ -17,6 +20,7 @@ class Player(QWidget):
         self.folder  = folder
         self.paths   = ls_files()
         self.frame   = QFrame()
+        self.plot    = pg.plot()
         self.n_frame = len(self.paths)
         self.i_frame = 0
         self.lb_frame = QLabel("Frame: %d" % self.i_frame)
@@ -55,7 +59,7 @@ class Player(QWidget):
         self.initUI()
 
     def init_VTags(self):
-        self.app.load(h5="model.h5")
+        self.app.load(h5="model_32f_20t.h5")
         self.toggles["pre"].setChecked(True)
         self.imgs_show = self.app.OUTS["pred"] ### define what show on the screen
 
@@ -114,13 +118,14 @@ class Player(QWidget):
                                  QSizePolicy.Maximum)
         self.frame.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        layout.addWidget(self.buttons["browse"], 0, 0, 1, 3)
-        layout.addWidget(self.frame,             1, 0, 1, 3, alignment=Qt.AlignCenter)
-        layout.addWidget(self.lb_frame,          2, 0, 1, 3)
+        # layout.addWidget(self.buttons["browse"], 0, 0, 1, 4)
+        layout.addWidget(self.frame,             1, 0, 1, 3, alignment=Qt.AlignLeft)
+        layout.addWidget(self.plot,              1, 3, 1, 1, alignment=Qt.AlignRight)
+        layout.addWidget(self.lb_frame,          2, 0, 1, 1)
         layout.addWidget(self.playback,          3, 0, 1, 3)
-        layout.addWidget(self.toggles["edges"],  4, 0)
-        layout.addWidget(self.toggles["cls"],  4, 1)
-        layout.addWidget(self.toggles["pre"],  4, 2)
+        layout.addWidget(self.toggles["edges"],  4, 0, 1, 1)
+        layout.addWidget(self.toggles["cls"],    4, 1, 1, 1)
+        layout.addWidget(self.toggles["pre"],    4, 2, 1, 1)
         # layout.addWidget(self.sli_span,          5, 0, 1, 3)
         # layout.addWidget(self.lb_thre,           6, 0, 1, 3)
         # layout.addWidget(self.sli_thre,          7, 0, 1, 3)
@@ -131,9 +136,35 @@ class Player(QWidget):
 
         self.move(300, 200)
         self.setWindowTitle('Virtual Tags')
-        self.setGeometry(50, 50, 320, 200)
+        self.setGeometry(50, 50, 1344, 840)
 
         self.show()
+
+    def set_plot(self):
+        # clear plot
+        self.plot.clear()
+
+        # obtain app info
+        i   = self.i_frame
+        pcs = self.app.OUTS["pcs"][i]
+        ids = self.app.OUTS["k_to_id"][i]
+        n   = len(pcs)
+
+        # define position for dots
+        pos = [(p[0], p[1]) for p in pcs]
+
+        # define colors for dots
+        if self.toggles["edges"].isChecked():
+            bs = [QBrush(QColor("#000000")) for i in range(n)]
+        elif self.toggles["cls"].isChecked():
+            nc = len(colorsets) - 1  # exclude 0: background color
+            bs = [QBrush(QColor(colorsets[(i % nc) + 1])) for i in range(n)]
+        elif self.toggles["pre"].isChecked():
+            bs = [QBrush(QColor(colorsets[idx.astype(int)])) for idx in ids]
+
+        data = [dict(pos=pos[i], brush=bs[i], size=20) for i in range(n)]
+        item_scatter = pg.ScatterPlotItem(data)
+        self.plot.addItem(item_scatter)
 
     def next_frames(self):
         self.i_frame += 1
@@ -149,6 +180,7 @@ class Player(QWidget):
 
     def update_frames(self):
         i = self.i_frame
+        self.set_plot()
         self.playback.setValue(i)
         self.lb_frame.setText("Frame: %d" % i)
         self.frame.setPixmap(QPixmap(self.paths[i]))
@@ -240,23 +272,7 @@ def getBinQImg(img):
 
 
 def getIdx8QImg(img, k):
-    colormap = [qRgb(0, 0, 0),       # 0
-                qRgb(255, 255, 51),  # 1
-                qRgb(55, 126, 184),  # 2
-                qRgb(77, 175, 74),   # 3
-                qRgb(228, 26, 28),   # 4
-                qRgb(152, 78, 163),  # 5
-                qRgb(255, 127, 0),   # 6
-                qRgb(13, 136, 250),  # 7
-                qRgb(247, 129, 191), # 8
-                qRgb(153, 153, 153)] # 9
-
-    colormap = [QColor("#000000"),
-                QColor(255, 255, 51),
-                QColor("#f94144"), QColor("#f3722c"), QColor("#f8961e"),
-                QColor("#f9844a"), QColor("#f9c74f"), QColor("#90be6d"),
-                QColor("#43aa8b"), QColor("#4d908e"), QColor("#577590"),
-                QColor("#277da1")]
+    colormap = [QColor(c) for c in colorsets]
 
     h, w = img.shape[0], img.shape[1]
     qImg = QImage(img.astype(np.uint8).copy(), w,
@@ -274,6 +290,7 @@ def getGrayQImg(img):
     return QPixmap(qImg)
 
 
+
 # Note
 # self.thread = QThread(self)
 # self.thread.started.connect(self.update_image)
@@ -288,3 +305,14 @@ def getGrayQImg(img):
     # painter.drawPixmap(result.rect(), p2, p2.rect())
     # painter.end()
     # return result
+
+# colormap = [qRgb(0, 0, 0),       # 0
+#             qRgb(255, 255, 51),  # 1
+#             qRgb(55, 126, 184),  # 2
+#             qRgb(77, 175, 74),   # 3
+#             qRgb(228, 26, 28),   # 4
+#             qRgb(152, 78, 163),  # 5
+#             qRgb(255, 127, 0),   # 6
+#             qRgb(13, 136, 250),  # 7
+#             qRgb(247, 129, 191),  # 8
+#             qRgb(153, 153, 153)]  # 9

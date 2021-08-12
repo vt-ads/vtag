@@ -21,14 +21,17 @@ class VTags():
         self.OUTS = dict(
                         cts = None,    # (y, x) coordinate of centers of each k
                         cls = None,    # clusters
-                        pos_yx = None, # (y, x) coordinate of edges
-                        k_to_id= None,
+                        pos_yx  = None, # (y, x) coordinate of edges
+                        k_to_id = None,
+                        pcs = None,
                         pred = None,
+                        pred_cls = None,
         )
 
     def load(self, path=".", h5=None, n=-1):
         if h5 is not None:
             self.ARGS, self.IMGS, self.OUTS = pickle.load(open(h5, "rb"))
+
         else:
             # list files
             ls_imgs = os.listdir(path)
@@ -58,11 +61,11 @@ class VTags():
             self.IMGS["mov"]    = np.zeros((n, h, w), dtype=np.float32)
             self.IMGS["edg"]    = np.zeros((n, h, w), dtype=np.uint8)
 
-            self.OUTS["cts"]    = np.zeros((n, self.ARGS["k"], 14), dtype=np.int) # 14 is: time(8)+spatial(4)+xy(2)
-            self.OUTS["cls"]    = n * [None]
-            self.OUTS["pos_yx"] = n * [None]
-            self.OUTS["k_to_id"]= np.zeros((n, self.ARGS["k"]))
-            self.OUTS["pred"]   = np.zeros((n, h, w), dtype=np.uint8)
+            self.OUTS["cls"]      = n * [None]
+            self.OUTS["pos_yx"]   = n * [None]
+            self.OUTS["k_to_id"]  = np.zeros((n, self.ARGS["k"]))
+            self.OUTS["pcs"]      = np.zeros((n, self.ARGS["k"], 2))
+            self.OUTS["pred"]     = np.zeros((n, h, w), dtype=np.uint8)
             self.OUTS["pred_cls"] = np.zeros((n, h, w), dtype=np.uint8)
 
 
@@ -79,18 +82,33 @@ class VTags():
         imgs_mov = self.IMGS["mov"]
         imgs_bw  = self.IMGS["bw"]
         n        = self.ARGS["n"]
+        imgs_mov_tmp = imgs_mov.copy()
 
         # compute std images
         for i in range(n):
-            imgs_mov[i] = detect_imgs(imgs_bw, i)
+            imgs_mov_tmp[i] = detect_imgs(imgs_bw, i)
 
         # binarize
-        std_matrix = imgs_mov[~np.isnan(imgs_mov).max(axis=(1, 2))]
-        cutoff = np.median(std_matrix) + (3 * np.std(std_matrix))
+        # remove na frames
+        nonna_frames = imgs_mov_tmp[~np.isnan(imgs_mov_tmp).max(axis=(1, 2))]
+        tick   = np.std(nonna_frames)
+        cutoff = np.median(nonna_frames) + (3 * tick)
         for i in range(n):
-            imgs_mov[i] = get_binary(imgs_mov[i], cutabs=cutoff)
+            imgs_mov[i] = get_binary(imgs_mov_tmp[i], cutabs=cutoff)
 
-    def detect_edges(self, n_denoise=5):
+        # rescue low-signal frame
+        nsig_frames = np.array([np.count_nonzero(img) for img in imgs_mov])
+        cut_rescue = np.quantile(nsig_frames, .3)
+        idx_rescue = np.where((nsig_frames < cut_rescue) & (nsig_frames > 0))[0]
+        for i in idx_rescue:
+            img_tmp = imgs_mov[i]
+            adjust = 0
+            while np.count_nonzero(img_tmp) <= cut_rescue:
+                adjust += (tick * 0.2)
+                img_tmp = get_binary(imgs_mov_tmp[i], cutabs=cutoff - adjust)
+            imgs_mov[i] = img_tmp
+
+    def detect_edges(self, n_denoise=10):
         '''
         '''
         imgs_mov = self.IMGS["mov"]
@@ -122,14 +140,17 @@ class VTags():
     def detect_clusters(self):
         '''
         '''
+        n        = self.ARGS["n"]
+        k        = self.ARGS["k"]
         imgs_edg = self.IMGS["edg"]
         clusters = self.OUTS["cls"]
-        centers  = self.OUTS["cts"]
         pos_yx   = self.OUTS["pos_yx"]
-        k        = self.ARGS["k"]
-        n        = self.ARGS["n"]
+        # 24 is: time(8)+spatial(4)+xy(12))
+        # 32 is: time(12)+spatial(4)+xy(16)
+        centers  = np.zeros((n, k, 24))
 
         for i in range(n):
+            print(i)
             try:
                 cls, cts, np_yx = do_k_means(imgs_edg, i, k)
                 clusters[i] = cls
@@ -138,17 +159,18 @@ class VTags():
             except Exception as e:
                 print(e)
 
+        self.OUTS["cts"] = centers
 
     def map_k_to_id(self):
         '''
         '''
-        n        = self.ARGS["n"]
-        k        = self.ARGS["n_id"]
+        n            = self.ARGS["n"]
+        k            = self.ARGS["n_id"]
         features_all = self.OUTS["cts"]
 
         for i in range(n):
-            self.OUTS["k_to_id"][i] = map_features_to_id(features_all[i], k)
-
+            self.OUTS["k_to_id"][i], self.OUTS["pcs"][i] =\
+                map_features_to_id(features_all[i], k)
 
     def make_predictions(self):
         '''
@@ -170,7 +192,7 @@ class VTags():
                 which_id = k_to_id[i][clt]
                 pred[i][pts[:, 0], pts[:, 1]] = which_id
 
-                ## show clusters
+                # show clusters
                 pred_clt[i][pts[:, 0], pts[:, 1]] = clts[i] + 1
 
 

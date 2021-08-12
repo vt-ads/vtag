@@ -2,26 +2,29 @@ from lib import *
 from Tags import VTags
 
 # Input
-dataname  = "one_pig"
+dataname = "one_pig_small"
 
 # WD
 path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/"
 os.chdir(path_project + dataname)
 
 ## Detailed run
-# self.detect_movements()
-# self.detect_edges()
-# self.detect_clusters()
-# self.map_k_to_id()
-# self.make_predictions()
+# app = VTags(k=1, n_tags=20)
+# app.load()
+# app.detect_movements()
+# app.detect_edges()
+# app.detect_clusters()
+# app.map_k_to_id()
+# app.make_predictions()
+# app.save("model_24f_20t.h5")
 
-# First Run
-# app = VTags(k=1, n_tags=10)
+## First Run
+# app = VTags(k=1, n_tags=20)
 # app.load()
 # app.run()
-# app.save("model.h5")
+# app.save("model2.h5")
 
-# Detail run small
+## Detail run small
 # app = VTags(k=1, n_tags=10)
 # app.load()
 # app.detect_movements()
@@ -30,139 +33,136 @@ os.chdir(path_project + dataname)
 
 # Resume run
 app = VTags(k=1)
-app.load(h5="model.h5")
-
-# Test features
-app.map_k_to_id()
-app.make_predictions()
-app.save()
-
-
-number_group = QtGui.QButtonGroup(QWidget())  # Number group
-r0=QtGui.QRadioButton("0")
-number_group.addButton(r0)
-r1=QtGui.QRadioButton("1")
-number_group.addButton(r1)
-layout.addWidget(r0)
-
-toggles
-dict(edges=QRadioButton("Edges"),
-     cls=QRadioButton("Clusters"),
-     pre=QRadioButton("Predictions"))
+app.load(h5="model_24f_20t.h5")
 
 
 
+### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+#NOTE: arbitrary numbers
+# movement cut: mean + 3std
+# movement res: 30%
 
-i, k = 283, 1
+# frame: 228 - 230
+# zero-size array to reduction operation maximum which has no identity
+# frame: 257 - 262, 270 - 276,
+# could not broadcast input array from shape (28) into shape (32)
+# frame: 297 - 299
+# could not broadcast input array from shape (24) into shape (32)
 
-features = app.OUTS["cts"]
+### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
-i = 12
-plt.imshow(app.OUTS["pred_cls"][i])
+k, i = 1, 15
+features_all = app.OUTS["cts"]
+pcs_all = app.OUTS["pcs"]
 
-for i in range(300):
-    map_features_to_id(features[i], k)
+features = features_all[i]
+pcs = pcs_all[i]
+n_ft = len(features)
+new_ids = np.array([0] * n_ft)
 
 
 pca = PCA(2)
-pca.fit(features[i])
-pcs = pca.transform(features[i]) * pca.explained_variance_ratio_
+pca.fit(features)
+pca.explained_variance_ratio_
+pcs = pca.transform(features) * pca.explained_variance_ratio_
 
+#-- Get PCs from features, and cluster into k+1 groups
 ids, _ = cv_k_means(pcs, k + 1)
+
+plt.scatter(pcs[ids==0, 0], pcs[ids==0, 1])
+plt.scatter(pcs[ids==1, 0], pcs[ids==1, 1])
 
 # get collection of cluster numbers
 value_counts = pd.value_counts(ids)
 keys = value_counts.keys()
 
-n_ft = len(features[i])
-new_ids = np.array([0] * n_ft)
-
-major = 0
 #-- clean outliers and include missed
+major = 1
 for major in keys:
-    # remove outliers
-    idx_maj = np.where(ids == major)[0]
+# remove outliers
+idx_maj = np.where(ids == major)[0]
 
-    if len(idx_maj) == 1:
-        new_ids[idx_maj] = major
-
-    else:
-        pts_maj, keep_idx_maj = remove_outliers(pcs[idx_maj])
-
-        # update majority idx
-        idx_out = idx_maj[~keep_idx_maj]
-        idx_maj = idx_maj[keep_idx_maj]
-
-        # new center of majority
-        mid_maj = np.median(pts_maj, axis=0)
-
-        # distance to the center of each points
-        dist    = np.array([distance(pcs[i], mid_maj) for i in range(len(pcs))])
-
-        ids_tmp, _ = cv_k_means(dist, 2) # either belong to major group (1) or not (0)
-        ids_tmp    = reassign_id_by(ids_tmp, dist, by="value")
-
-        new_ids[ids_tmp == 1] = major
-        new_ids[idx_out] = -1
+pts_maj, keep_idx_maj = remove_outliers(pcs[idx_maj])
 
 
+
+pts = pcs[idx_maj]
+
+plt.scatter(pts[:, 0], pts[:, 1])
+n_pts = len(pts)
+
+idx_all = np.array(range(n_pts))
+
+idx_keep  = idx_all
+bool_keep = [False] * n_pts
+while not all(bool_keep):
+    dist = []
+    for i in idx_keep:
+        idx = [k for k in range(n_pts) if k != i]
+        a, b, c = fit_linear(pts[idx])
+        dist += [distance_to_line(a, b, c, pts[i, 0], pts[i, 1])]
+    bool_keep = dist < np.median(dist) + np.std(dist) * 2
+    idx_keep = idx_keep[bool_keep]
+
+
+plt.scatter(pcs[ids == 1, 0], pcs[ids == 1, 1])
+plt.scatter(pts[idx_keep, 0], pts[idx_keep, 1])
+
+20
+
+
+plt.scatter(pts[rate > 2.5, 0], pts[rate > 2.5, 1])
+plt.scatter(pts[rate <= 2.5, 0], pts[rate <= 2.5, 1])
+
+
+
+
+gmid = cluster_gm(pts, 2, weights=[.9, .1])
+plt.scatter(pts[gmid==0, 0], pts[gmid==0, 1])
+plt.scatter(pts[gmid==1, 0], pts[gmid==1, 1])
+
+
+plt.scatter(pcs[ids == 0, 0], pcs[ids == 0, 1])
+plt.scatter(pcs[ids == 1, 0], pcs[ids == 1, 1])
+
+
+
+all(keep_idx_maj)
+
+# update majority idx
+idx_out = idx_maj[~keep_idx_maj]
+idx_maj = idx_maj[keep_idx_maj]
+
+# new center of majority
+mid_maj = np.median(pts_maj, axis=0)
+
+# distance to the center of each points
+dist = np.array([distance(pcs[i], mid_maj) for i in range(n_ft)])
+
+# either belong to major group (1) or not (0)
+ids_tmp, _ = cv_k_means(dist, 2)
+ids_tmp = reassign_id_by(ids_tmp, dist, by="value")
+
+new_ids[ids_tmp == 1] = major
+new_ids[idx_out] = -1
+
+
+plt.scatter(pcs[ids == 0, 0], pcs[ids == 0, 1])
+plt.scatter(pcs[ids == 1, 0], pcs[ids == 1, 1])
+
+plt.scatter(pcs[new_ids == 0, 0], pcs[new_ids == 0, 1])
+plt.scatter(pcs[new_ids == 1, 0], pcs[new_ids == 1, 1])
+
+plt.plot(dist)
+
+
+# finalize new ids
 new_ids = reassign_id_by(new_ids, values=pcs, by="size")
 new_ids[idx_out] = 0
 
 
+ids_tmp
 
-plt.scatter(pcs[ids==0, 0], pcs[ids==0, 1])
-plt.scatter(pcs[ids==1, 0], pcs[ids==1, 1])
-
-plt.scatter(pcs[new_ids==0, 0], pcs[new_ids==0, 1])
-plt.scatter(pcs[new_ids==1, 0], pcs[new_ids==1, 1])
-
-
-
-
-
-pcs = PCA(2).fit_transform(features[i])
-ids, _ = cv_k_means(pcs, k + 1)
-
-
-
-
-major = 0
-# remove outliers
-idx_maj = np.where(ids==major)[0]
-pts_maj, keep_maj = remove_outliers(pcs[idx_maj])
-
-# update idx
-idx_maj = idx_maj[keep_maj]
-
-mid_maj = np.median(pts_maj, axis=0)
-dist = np.array([distance(pcs[i], mid_maj) for i in range(len(pcs))])
-
-dist[idx_maj]
-plt.scatter(range(10), dist)
-
-new_ids, _ = cv_k_means(dist, 2)
-
-
-
-n_k = pd.value_counts(new_ids).keys()
-dist = []
-for i in n_k:
-    pts = pcs[new_ids == i]
-    pt_ct = np.median(pts, axis=0)
-    dist_pts = []
-    for pt in pts:
-        dist_pts += [distance(pt, pt_ct)]
-    dist += [np.mean(dist_pts)]
-
-
-
-
-
-
-
-plt.scatter(pcs[new_ids==0, 0], pcs[new_ids==0, 1])
-plt.scatter(pcs[new_ids==1, 0], pcs[new_ids==1, 1])
 
 
 
