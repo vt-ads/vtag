@@ -1,16 +1,17 @@
 from lib import *
 from Tags import VTags
 
-colorsets = np.array(["#000000", "#ffff33", "#f94144", "#f3722c", "#f8961e",
-                      "#f9844a", "#f9c74f", "#90be6d", "#43aa8b", "#4d908e",
-                      "#577590", "#277da1"])
+colorsets = np.array(["#000000",
+                      "#ffff33", "#f94144", "#f3722c", "#f8961e", "#f9844a",
+                      "#f9c74f", "#90be6d", "#43aa8b", "#4d908e", "#577590",
+                      "#277da1"])
 
 class Player(QWidget):
     def __init__(self, folder="/Users/jchen/Dropbox/projects/Virtual_Tags/data"):
         super().__init__()
 
         # WD
-        dataname = "one_pig"
+        dataname = "one_pig_small"
         os.chdir(folder)
         os.chdir(dataname)
 
@@ -59,7 +60,7 @@ class Player(QWidget):
         self.initUI()
 
     def init_VTags(self):
-        self.app.load(h5="model_32f_20t.h5")
+        self.app.load(h5="model_24f_20t.h5")
         self.toggles["pre"].setChecked(True)
         self.imgs_show = self.app.OUTS["pred"] ### define what show on the screen
 
@@ -136,7 +137,7 @@ class Player(QWidget):
 
         self.move(300, 200)
         self.setWindowTitle('Virtual Tags')
-        self.setGeometry(50, 50, 1344, 840)
+        self.setGeometry(50, 50, 1465, 620)
 
         self.show()
 
@@ -156,9 +157,11 @@ class Player(QWidget):
         # define colors for dots
         if self.toggles["edges"].isChecked():
             bs = [QBrush(QColor("#000000")) for i in range(n)]
+
         elif self.toggles["cls"].isChecked():
             nc = len(colorsets) - 1  # exclude 0: background color
             bs = [QBrush(QColor(colorsets[(i % nc) + 1])) for i in range(n)]
+
         elif self.toggles["pre"].isChecked():
             bs = [QBrush(QColor(colorsets[idx.astype(int)])) for idx in ids]
 
@@ -271,15 +274,19 @@ def getBinQImg(img):
     return QPixmap(qImg)
 
 
-def getIdx8QImg(img, k):
+def getIdx8QImg(img, k): # k=20
     colormap = [QColor(c) for c in colorsets]
 
     h, w = img.shape[0], img.shape[1]
     qImg = QImage(img.astype(np.uint8).copy(), w,
                   h, w*1, QImage.Format_Indexed8)
-                #   h, w*3, QImage.Format_RGB888)
-    for i in range(k + 1): # add 1 for the background
-        qImg.setColor(i, colormap[i % len(colormap)].rgba()) # use '%' to iterate the colormap
+    nc = len(colormap) - 1  # exclude 0: background color
+
+    # background color
+    qImg.setColor(0, colormap[0].rgba())
+    # cluster color
+    for i in range(k): # i: 1 ~ 20
+        qImg.setColor(i + 1, colormap[(i % nc) + 1].rgba()) # use '%' to iterate the colormap
     return QPixmap(qImg)
 
 

@@ -8,17 +8,20 @@ dataname = "one_pig_small"
 path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/"
 os.chdir(path_project + dataname)
 
-## Detailed run
-# app = VTags(k=1, n_tags=20)
-# app.load()
-# app.detect_movements()
-# app.detect_edges()
-# app.detect_clusters()
-# app.map_k_to_id()
-# app.make_predictions()
-# app.save("model_24f_20t.h5")
+# Detailed run
+app = VTags(k=1, n_tags=20)
+bound_x = [180, 730, 725, 170]
+bound_y = [70,  90,  460, 440]
+bounds = np.array([[y, x] for x, y in zip(bound_x, bound_y)])
+app.load(bounds=bounds)
+app.detect_movements()
+app.detect_edges()
+app.detect_clusters()
+app.map_k_to_id()
+app.make_predictions()
+app.save("model_24f_20t.h5")
 
-## First Run
+# # First Run
 # app = VTags(k=1, n_tags=20)
 # app.load()
 # app.run()
@@ -49,85 +52,81 @@ app.load(h5="model_24f_20t.h5")
 # frame: 297 - 299
 # could not broadcast input array from shape (24) into shape (32)
 
+# problem frames
+# 15, 206
+
+### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
+# Crop
+img_e = app.IMGS["edg"]
+img_p = app.OUTS["pred"]
+img_c = app.OUTS["pred_cls"]
+
+
+i = 17
+plt.imshow(img_e[i])
+plt.imshow(img_c[i])
+
+img_show = img_c[i][150:200, 350:400]
+plt.imshow(img_show)
+img_show[10:20, 20:30]
+
+
+counts = pd.value_counts(img_c[i].reshape((-1)))
+
+dt = pd.DataFrame(counts).reset_index()
+dt.sort_values(["index"])
+
+
+n        = app.ARGS["n"]
+k        = app.ARGS["k"]
+imgs_edg = app.IMGS["edg"]
+clusters = app.OUTS["cls"]
+pos_yx = app.OUTS["pos_yx"]
+# 24 is: time(8)+spatial(4)+xy(12))
+# 32 is: time(12)+spatial(4)+xy(16)
+centers  = np.zeros((n, k, 24))
+
+i = 0
+for i in range(n):
+    print(i)
+    try:
+cls, cts, np_yx = do_k_means(imgs_edg, pos_yx, i, k)
+pos_yx
 ### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 
-k, i = 1, 15
+
+
+
+k, i = 1, 206
 features_all = app.OUTS["cts"]
 pcs_all = app.OUTS["pcs"]
 
 features = features_all[i]
 pcs = pcs_all[i]
+
 n_ft = len(features)
 new_ids = np.array([0] * n_ft)
 
-
+#-- Get PCs from features, and cluster into k+1 groups
 pca = PCA(2)
 pca.fit(features)
-pca.explained_variance_ratio_
 pcs = pca.transform(features) * pca.explained_variance_ratio_
-
-#-- Get PCs from features, and cluster into k+1 groups
 ids, _ = cv_k_means(pcs, k + 1)
 
-plt.scatter(pcs[ids==0, 0], pcs[ids==0, 1])
-plt.scatter(pcs[ids==1, 0], pcs[ids==1, 1])
+
+plt.scatter(pcs[ids == 0, 0], pcs[ids == 0, 1])
+plt.scatter(pcs[ids == 1, 0], pcs[ids == 1, 1])
 
 # get collection of cluster numbers
 value_counts = pd.value_counts(ids)
 keys = value_counts.keys()
 
 #-- clean outliers and include missed
-major = 1
-for major in keys:
+major = keys[np.where(value_counts == max(value_counts))[0][0]]
+
 # remove outliers
 idx_maj = np.where(ids == major)[0]
-
 pts_maj, keep_idx_maj = remove_outliers(pcs[idx_maj])
-
-
-
-pts = pcs[idx_maj]
-
-plt.scatter(pts[:, 0], pts[:, 1])
-n_pts = len(pts)
-
-idx_all = np.array(range(n_pts))
-
-idx_keep  = idx_all
-bool_keep = [False] * n_pts
-while not all(bool_keep):
-    dist = []
-    for i in idx_keep:
-        idx = [k for k in range(n_pts) if k != i]
-        a, b, c = fit_linear(pts[idx])
-        dist += [distance_to_line(a, b, c, pts[i, 0], pts[i, 1])]
-    bool_keep = dist < np.median(dist) + np.std(dist) * 2
-    idx_keep = idx_keep[bool_keep]
-
-
-plt.scatter(pcs[ids == 1, 0], pcs[ids == 1, 1])
-plt.scatter(pts[idx_keep, 0], pts[idx_keep, 1])
-
-20
-
-
-plt.scatter(pts[rate > 2.5, 0], pts[rate > 2.5, 1])
-plt.scatter(pts[rate <= 2.5, 0], pts[rate <= 2.5, 1])
-
-
-
-
-gmid = cluster_gm(pts, 2, weights=[.9, .1])
-plt.scatter(pts[gmid==0, 0], pts[gmid==0, 1])
-plt.scatter(pts[gmid==1, 0], pts[gmid==1, 1])
-
-
-plt.scatter(pcs[ids == 0, 0], pcs[ids == 0, 1])
-plt.scatter(pcs[ids == 1, 0], pcs[ids == 1, 1])
-
-
-
-all(keep_idx_maj)
 
 # update majority idx
 idx_out = idx_maj[~keep_idx_maj]
@@ -145,6 +144,11 @@ ids_tmp = reassign_id_by(ids_tmp, dist, by="value")
 
 new_ids[ids_tmp == 1] = major
 new_ids[idx_out] = -1
+
+# finalize new ids
+new_ids = reassign_id_by(new_ids, values=pcs, by="size")
+new_ids[idx_out] = 0
+
 
 
 plt.scatter(pcs[ids == 0, 0], pcs[ids == 0, 1])

@@ -6,6 +6,7 @@ import copy
 import pickle
 import cv2 as cv
 import matplotlib.pyplot as plt
+import matplotlib.path as mpath
 import pyqtgraph as pg
 import pandas as pd
 import numpy  as np
@@ -154,6 +155,7 @@ def smooth_signals(signals, n, kernel=-1):
     return signals
 
 
+
 def process_signals(signals, n_smth=5, cut_sd=2, burnin=16):
     signals_sm = smooth_signals(signals, n=n_smth)
     signals_abs = np.abs(signals - signals_sm)
@@ -169,14 +171,13 @@ def process_signals(signals, n_smth=5, cut_sd=2, burnin=16):
     return signals_fx
 
 
-def do_k_means(imgs, i, k):
+def do_k_means(imgs, pos_yx, i, k):
     """
     imgs: series number of images (video)
+    edges: points (y, x) of detected pixels
     i: i frame image
     k: number of k of clustering
     """
-    ## temporal, neighbor pixels, and yx coordinate
-    pos_yx = find_nonzeros(imgs[i])
     # n: number of nonzero pixels
     n = len(pos_yx)
     # computer feature length: tp(8) + sp(4) + pos(12)
@@ -275,6 +276,13 @@ def distance(pt1, pt2, is_dir=False):
         return distance
 
 
+def filter_edges(edgs, bounds):
+    paths = mpath.Path(bounds)
+    idx_keep = paths.contains_points(edgs)
+    return edgs[idx_keep]
+
+
+
 def make_block(inputs, i, pos, size=(3, 3)):
     """
     inputs: n x h x w, n is number of frames
@@ -353,39 +361,35 @@ def map_features_to_id(features, k, use_pca=False):
         pca = PCA(2)
         pca.fit(features)
         pcs = pca.transform(features) * pca.explained_variance_ratio_
-        ids, _ = cv_k_means(features, k + 1)
+        ids, _ = cv_k_means(pcs, k + 1)
 
         # get collection of cluster numbers
         value_counts = pd.value_counts(ids)
         keys = value_counts.keys()
 
         #-- clean outliers and include missed
-        for major in keys:
-            # remove outliers
-            idx_maj = np.where(ids == major)[0]
+        major = keys[np.where(value_counts == max(value_counts))[0][0]]
 
-            if len(idx_maj) == 1:
-                new_ids[idx_maj] = major
+        # remove outliers
+        idx_maj = np.where(ids == major)[0]
+        pts_maj, keep_idx_maj = remove_outliers(pcs[idx_maj])
 
-            else:
-                pts_maj, keep_idx_maj = remove_outliers(pcs[idx_maj])
+        # update majority idx
+        idx_out = idx_maj[~keep_idx_maj]
+        idx_maj = idx_maj[keep_idx_maj]
 
-                # update majority idx
-                idx_out = idx_maj[~keep_idx_maj]
-                idx_maj = idx_maj[keep_idx_maj]
+        # new center of majority
+        mid_maj = np.median(pts_maj, axis=0)
 
-                # new center of majority
-                mid_maj = np.median(pts_maj, axis=0)
+        # distance to the center of each points
+        dist = np.array([distance(pcs[i], mid_maj) for i in range(n_ft)])
 
-                # distance to the center of each points
-                dist = np.array([distance(pcs[i], mid_maj) for i in range(len(pcs))])
+        # either belong to major group (1) or not (0)
+        ids_tmp, _ = cv_k_means(dist, 2)
+        ids_tmp = reassign_id_by(ids_tmp, dist, by="value")
 
-                # either belong to major group (1) or not (0)
-                ids_tmp, _ = cv_k_means(dist, 2)
-                ids_tmp = reassign_id_by(ids_tmp, dist, by="value")
-
-                new_ids[ids_tmp == 1] = major
-                new_ids[idx_out] = -1
+        new_ids[ids_tmp == 1] = major
+        new_ids[idx_out] = -1
 
         # finalize new ids
         new_ids = reassign_id_by(new_ids, values=pcs, by="size")
@@ -455,15 +459,21 @@ def remove_outliers(pts, out_std=2):
     n_pts = len(pts)
 
     if n_pts > 2:
-        dist = []
-        for i in range(len(pts)):
-            idx = [k for k in range(n_pts) if k != i]
-            mid_maj = np.median(pts[idx], axis=0)
-            dist += [distance(pts[i], mid_maj)]
+        idx_all   = np.array(range(n_pts))
+        bool_all  = np.array([False] * n_pts)
+        idx_keep  = idx_all
+        bool_keep = bool_all
+        while not all(bool_keep):
+            dist = []
+            for i in idx_keep:
+                idx = [k for k in range(n_pts) if k != i]
+                a, b, c = fit_linear(pts[idx])
+                dist += [distance_to_line(a, b, c, pts[i, 0], pts[i, 1])]
+            bool_keep = dist < np.median(dist) + np.std(dist) * out_std
+            idx_keep = idx_keep[bool_keep]
 
-        idx_keep = dist < np.median(dist) + np.std(dist) * out_std
-
-        return pts[idx_keep], idx_keep
+        bool_all[idx_keep] = True
+        return pts[idx_keep], bool_all
 
     else:
         return pts, np.array([True] * n_pts)

@@ -11,6 +11,7 @@ class VTags():
                         n_id   = k,
                         n_tags = n_tags,
                         k      = k * n_tags,
+                        bounds = [],
         )
         self.IMGS = dict(
                         bw  = None,
@@ -28,7 +29,7 @@ class VTags():
                         pred_cls = None,
         )
 
-    def load(self, path=".", h5=None, n=-1):
+    def load(self, path=".", h5=None, n=-1, bounds=[]):
         if h5 is not None:
             self.ARGS, self.IMGS, self.OUTS = pickle.load(open(h5, "rb"))
 
@@ -55,6 +56,11 @@ class VTags():
             self.ARGS["h"] = h
             self.ARGS["w"] = w
             self.ARGS["c"] = c
+            if len(bounds) == 0:
+                # [y, x]
+                self.ARGS["bounds"] = np.array([[0, 0], [0, w], [h, w], [h, 0]])
+            else:
+                self.ARGS["bounds"] = np.array(bounds)
 
             self.IMGS["rgb"]    = imgs_rgb
             self.IMGS["bw"]     = imgs_rgb.sum(axis=3)
@@ -114,6 +120,8 @@ class VTags():
         imgs_mov = self.IMGS["mov"]
         imgs_edg = self.IMGS["edg"]
         n        = self.ARGS["n"]
+        pos_yx   = self.OUTS["pos_yx"]
+        bounds   = self.ARGS["bounds"]
 
         k_edge = np.array((
             [-1, -1, -1],
@@ -133,9 +141,11 @@ class VTags():
                 conv = convolve2d(conv, k_gauss, mode="same")
                 conv = get_binary(conv, cutabs=.5)
             imgs_edg[i] = conv
-
-        # create reduncdent pixel
-        imgs_edg[:, 10:20, 10:20] = 1 # in the feature it's (14, 14)
+            # create reduncdent pixel
+            imgs_edg[i, 10:20, 10:20] = 1 # in the feature it's (14, 14)
+            # find pos of edges and filter edges by safe area (boundary)
+            pos_yx_tmp = find_nonzeros(imgs_edg[i])
+            pos_yx[i]  = filter_edges(pos_yx_tmp, bounds)
 
     def detect_clusters(self):
         '''
@@ -146,13 +156,11 @@ class VTags():
         clusters = self.OUTS["cls"]
         pos_yx   = self.OUTS["pos_yx"]
         # 24 is: time(8)+spatial(4)+xy(12))
-        # 32 is: time(12)+spatial(4)+xy(16)
         centers  = np.zeros((n, k, 24))
 
         for i in range(n):
-            print(i)
             try:
-                cls, cts, np_yx = do_k_means(imgs_edg, i, k)
+                cls, cts, np_yx = do_k_means(imgs_edg, pos_yx[i], i, k)
                 clusters[i] = cls
                 centers[i]  = cts
                 pos_yx[i]   = np_yx
@@ -175,13 +183,12 @@ class VTags():
     def make_predictions(self):
         '''
         '''
+        n        = self.ARGS["n"]
         clts     = self.OUTS["cls"]
         pos_yx   = self.OUTS["pos_yx"]
         k_to_id  = self.OUTS["k_to_id"]
         pred     = self.OUTS["pred"]
         pred_clt = self.OUTS["pred_cls"]
-
-        n        = self.ARGS["n"]
 
         for i in range(n):
             if clts[i] is not None:
@@ -193,7 +200,7 @@ class VTags():
                 pred[i][pts[:, 0], pts[:, 1]] = which_id
 
                 # show clusters
-                pred_clt[i][pts[:, 0], pts[:, 1]] = clts[i] + 1
+                pred_clt[i][pts[:, 0], pts[:, 1]] = clt + 1 # cluster from 1 to k
 
 
     def save(self, h5="model.h5"):
