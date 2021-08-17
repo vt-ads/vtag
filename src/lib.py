@@ -10,17 +10,18 @@ import matplotlib.path as mpath
 import pyqtgraph as pg
 import pandas as pd
 import numpy  as np
-from scipy.signal      import spline_filter
-from scipy.signal      import convolve
-from scipy.signal      import convolve2d
-from scipy.signal      import find_peaks
-from skimage.measure   import block_reduce
-from sklearn.cluster   import AgglomerativeClustering
-from sklearn.neighbors import kneighbors_graph
-from sklearn.mixture   import GaussianMixture
-from sklearn.linear_model import LinearRegression
+from scipy.signal import spline_filter, convolve, convolve2d, find_peaks
+from skimage.measure       import block_reduce
+from sklearn               import cluster, datasets, mixture
+from sklearn.cluster       import AgglomerativeClustering
+from sklearn.neighbors     import kneighbors_graph
+from sklearn.mixture       import GaussianMixture
+from sklearn.linear_model  import LinearRegression
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
+from itertools import cycle, islice
+
+
 from PyQt5.QtGui import (QPixmap, QImage, QPaintDevice, QPainter,
                          qRgb, QColor, QPen, QBrush)
 from PyQt5.QtWidgets import (QApplication, QPushButton, QWidget, QLabel, QSlider,
@@ -53,6 +54,16 @@ def detect_imgs(imgs, frame, span=1):
 
     out_img = sum(out_std) / len(out_std)
     return out_img
+
+
+def load_labels(n_frames, k):
+    try:
+        labels = pd.read_csv("labels.csv")
+        labels = np.array(labels)
+    except:
+        labels = np.zeros((n_frames, k * 2), dtype=np.int)
+
+    return labels
 
 # === === === === === === === QT === === === === === === ===
 
@@ -360,43 +371,13 @@ def map_features_to_id(features, k, use_pca=False):
         #-- Get PCs from features, and cluster into k+1 groups
         pca = PCA(2)
         pca.fit(features)
-        pcs = pca.transform(features) * pca.explained_variance_ratio_
-        ids, _ = cv_k_means(pcs, k + 1)
-
-        # get collection of cluster numbers
-        value_counts = pd.value_counts(ids)
-        keys = value_counts.keys()
-
-        #-- clean outliers and include missed
-        major = keys[np.where(value_counts == max(value_counts))[0][0]]
-
-        # remove outliers
-        idx_maj = np.where(ids == major)[0]
-        pts_maj, keep_idx_maj = remove_outliers(pcs[idx_maj])
-
-        # update majority idx
-        idx_out = idx_maj[~keep_idx_maj]
-        idx_maj = idx_maj[keep_idx_maj]
-
-        # new center of majority
-        mid_maj = np.median(pts_maj, axis=0)
-
-        # distance to the center of each points
-        dist = np.array([distance(pcs[i], mid_maj) for i in range(n_ft)])
-
-        # either belong to major group (1) or not (0)
-        ids_tmp, _ = cv_k_means(dist, 2)
-        ids_tmp = reassign_id_by(ids_tmp, dist, by="value")
-
-        new_ids[ids_tmp == 1] = major
-        new_ids[idx_out] = -1
-
-        # finalize new ids
-        new_ids = reassign_id_by(new_ids, values=pcs, by="size")
-        new_ids[idx_out] = 0
+        # pcs = pca.transform(features) * pca.explained_variance_ratio_
+        pcs = pca.transform(features)
+        # ids, _ = cv_k_means(pcs, k)
+        ids = cluster_gm(pcs, k)
 
         # return
-        return new_ids, pcs
+        return ids + 1, pcs
 
 
 def reassign_id_by(old_ids, values=None, by="size"):
@@ -481,12 +462,12 @@ def remove_outliers(pts, out_std=2):
 
 def cluster_gm(data, k, weights=None):
     gm = GaussianMixture(n_components=k,
-                        max_iter=5000,
+                         max_iter=100,
+                         n_init=10,
                          weights_init=weights,
                         init_params="kmeans",
                         tol=1e-4)
     return gm.fit_predict(data)
-
 
 def fit_linear(pts):
     """

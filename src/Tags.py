@@ -27,6 +27,7 @@ class VTags():
                         pcs = None,
                         pred = None,
                         pred_cls = None,
+                        labels = None
         )
 
     def load(self, path=".", h5=None, n=-1, bounds=[]):
@@ -74,6 +75,7 @@ class VTags():
             self.OUTS["pred"]     = np.zeros((n, h, w), dtype=np.uint8)
             self.OUTS["pred_cls"] = np.zeros((n, h, w), dtype=np.uint8)
 
+        self.OUTS["labels"] = load_labels(self.ARGS["n"], self.ARGS["n_id"])
 
     def run(self):
         self.detect_movements()
@@ -202,6 +204,15 @@ class VTags():
                 # show clusters
                 pred_clt[i][pts[:, 0], pts[:, 1]] = clt + 1 # cluster from 1 to k
 
+    def set_labels(self, i, x, y):
+        new_labels = np.array([x, y]).swapaxes(0, 1).reshape(-1)
+        self.OUTS["labels"][i] = new_labels
 
     def save(self, h5="model.h5"):
         pickle.dump((self.ARGS, self.IMGS, self.OUTS), open(h5, "wb"))
+
+    def save_labels(self, file="labels.csv"):
+        labels = self.OUTS["labels"]
+        dt = pd.DataFrame(labels)
+        dt.to_csv(file, index=False)
+        print("--- Label saved ---")
