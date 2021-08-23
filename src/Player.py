@@ -1,3 +1,4 @@
+from PyQt5.QtGui import QCursor
 from lib import *
 from Tags import VTags
 
@@ -13,6 +14,7 @@ class Player(QWidget):
 
         # WD
         dataname = "group"
+        # dataname = "one_pig"
         os.chdir(folder)
         os.chdir(dataname)
 
@@ -42,6 +44,8 @@ class Player(QWidget):
 
         # GUI
         self.buttons = dict(browse= QPushButton("Browse"),
+                            show_lbs= QPushButton("Hide Labels"),
+                            show_pred= QPushButton("Hide Predictions"),
                             play  = QPushButton("Play"),
                             next  = QPushButton("Next frame > "),
                             prev  = QPushButton("< Previous frame"),
@@ -52,21 +56,26 @@ class Player(QWidget):
         self.playback = QSlider(Qt.Horizontal, self)
 
         # VTags
-        self.app = VTags()
+        self.ARGS, self.IMGS, self.OUTS = pickle.load(open("model.h5", "rb"))
+        self.toggles["pre"].setChecked(True)
+        self.imgs_show = self.IMGS["pred"]  # define what show on the screen
+
+        # try load existing labels
+        try:
+            labels = pd.read_csv("labels.csv")
+            self.OUTS["pred_labels"] = lb_from_pd_to_np(labels)
+        except Exception as e:
+            print(e)
 
         # init
-        self.init_VTags()
         self.update_frames()
         self.initRuntime()
         self.initUI()
 
-    def init_VTags(self):
-        self.app.load(h5="model_24f_20t.h5")
-        self.toggles["pre"].setChecked(True)
-        self.imgs_show = self.app.OUTS["pred"] ### define what show on the screen
-
     def initRuntime(self):
         self.timer.timeout.connect(self.next_frames)
+        self.buttons["show_lbs"].clicked.connect(self.toggle_lbs)
+        self.buttons["show_pred"].clicked.connect(self.toggle_pred)
         self.buttons["play"].clicked.connect(
             lambda x: self.change_status(not self.is_play))
         self.buttons["next"].clicked.connect(self.next_frames)
@@ -79,20 +88,40 @@ class Player(QWidget):
         self.sli_span.valueChanged.connect(self.change_span)
         self.sli_thre.valueChanged.connect(self.change_thre)
 
+    def toggle_lbs(self):
+        status = not self.frame.show_lbs
+        if status:
+            self.buttons["show_lbs"].setText("Hide Labels")
+        else:
+            self.buttons["show_lbs"].setText("Show Labels")
+        self.frame.show_lbs = status
+        self.update_frames()
+
+    def toggle_pred(self):
+        status = not self.frame.show_detect
+        if status:
+            self.buttons["show_pred"].setText("Hide Predictions")
+        else:
+            self.buttons["show_pred"].setText("Show Predictions")
+        self.frame.show_detect = status
+        self.update_frames()
+
     def toggle(self):
         if self.toggles["edges"].isChecked():
-            self.imgs_show = self.app.IMGS["edg"]
+            self.imgs_show = self.IMGS["edg"]
 
         elif self.toggles["cls"].isChecked():
-            self.imgs_show = self.app.OUTS["pred_cls"]
+            self.imgs_show = self.IMGS["pred_cls"]
 
         elif self.toggles["pre"].isChecked():
-            self.imgs_show = self.app.OUTS["pred"]
+            self.imgs_show = self.IMGS["pred"]
 
         self.update_frames()
 
     def save_lbs(self):
-        self.app.save_labels()
+        labels = self.OUTS["pred_labels"]
+        n_ids = self.ARGS["n_id"]
+        save_labels(labels, n_ids, "labels.csv")
 
     def initUI(self):
         # Slider
@@ -128,7 +157,7 @@ class Player(QWidget):
 
         # layout.addWidget(self.buttons["browse"], 0, 0, 1, 4)
         layout.addWidget(self.frame,             1, 0, 1, 3, alignment=Qt.AlignLeft)
-        layout.addWidget(self.plot,              1, 3, 1, 1, alignment=Qt.AlignRight)
+        layout.addWidget(self.plot,              1, 3, 1, 2, alignment=Qt.AlignRight)
         layout.addWidget(self.lb_frame,          2, 0, 1, 1)
         layout.addWidget(self.playback,          3, 0, 1, 3)
         layout.addWidget(self.toggles["edges"],  4, 0, 1, 1)
@@ -137,7 +166,9 @@ class Player(QWidget):
         layout.addWidget(self.buttons["prev"],   5, 0)
         layout.addWidget(self.buttons["play"],   5, 1)
         layout.addWidget(self.buttons["next"],   5, 2)
-        layout.addWidget(self.buttons["save"],   2, 3, 4, 1)
+        layout.addWidget(self.buttons["show_lbs"],   2, 3, 2, 1)
+        layout.addWidget(self.buttons["show_pred"],  2, 4, 2, 1)
+        layout.addWidget(self.buttons["save"],       4, 3, 2, 2)
 
         self.setLayout(layout)
 
@@ -153,8 +184,8 @@ class Player(QWidget):
 
         # obtain app info
         i   = self.i_frame
-        pcs = self.app.OUTS["pcs"][i]
-        ids = self.app.OUTS["k_to_id"][i]
+        pcs = self.OUTS["pcs"][i]
+        ids = self.OUTS["k_to_id"][i]
         n   = len(pcs)
 
         # define position for dots
@@ -194,13 +225,11 @@ class Player(QWidget):
         self.lb_frame.setText("Frame: %d" % i)
         self.frame.setPixmap(QPixmap(self.paths[i]))
         self.frame.set_predict(self.imgs_show[i])
-        # set up label from the displayed frames
-        k      = self.app.ARGS["n_id"]
-        labels = self.app.OUTS["labels"]
-        idx_x  = [2 * i for i in range(k)]
-        idx_y  = [2 * i + 1 for i in range(k)]
-        x      = labels[i, idx_x]
-        y      = labels[i, idx_y]
+        # show labels from the displayed frames
+        k      = self.ARGS["n_id"]
+        labels = self.OUTS["pred_labels"]
+        x      = labels[i, :, 1]
+        y      = labels[i, :, 0]
         self.frame.set_label(x, y)
         # update GUI
         self.frame.repaint()
@@ -230,30 +259,29 @@ class Player(QWidget):
 
     def mousePressEvent(self, evt):
         if self.frame.rect().contains(evt.pos()):
+
             # collect info
-            k       = self.app.ARGS["n_id"]
-            labels  = self.app.OUTS["labels"]
+            k       = self.ARGS["n_id"]
+            labels  = self.OUTS["pred_labels"]
             counter = self.label_counter
             i       = self.i_frame
 
-            # locate which label to input
-            idx_x = 2 * (counter % k)
-            idx_y = 2 * (counter % k) + 1
+            # update label counter
+            self.label_counter = (counter + 1) % k
+            self.frame.label_counter = self.label_counter
 
             # get labels
             x, y = self.frame.mx, self.frame.my
 
             # enter labels
-            labels[i, idx_x] = x
-            labels[i, idx_y] = y
+            labels[i, counter, 1] = x
+            labels[i, counter, 0] = y
 
             # if label all ids, move to next frame
             if ((counter + 1) % k) == 0:
                 self.next_frames()
             else:
                 self.update_frames()
-            self.label_counter = (self.label_counter + 1) % 2
-
 
 
 class QFrame(QLabel):
@@ -273,8 +301,11 @@ class QFrame(QLabel):
         self.mx = -1
         self.my = -1
         # ground truth
+        self.show_lbs = True
         self.lb_x = []
         self.lb_y = []
+        # label counter
+        self.label_counter = 0
 
     def set_image(self, pixmap):
         self.pixmap = pixmap
@@ -294,27 +325,54 @@ class QFrame(QLabel):
         painter = QPainter(self)
         if self.show_detect:
             # draw detection
-            painter.setOpacity(0.8)
             painter.drawPixmap(0, 0, self.img_detect)
 
-            # draw labels
-            pen = QPen()
-            pen.setWidth(8)
-            pen.setStyle(Qt.SolidLine)
+        # draw labels
+        if self.show_lbs:
             n_labels = len(self.lb_x)
 
+            pen = QPen()
+            pen.setStyle(Qt.SolidLine)
             for i in range(n_labels):
-                color = QColor(colorsets[i + 1])
-                pen.setColor(color)
+                # border (black)
+                pen.setWidth(10)
+                pen.setColor(QColor(colorsets[0]))
+                painter.setPen(pen)
+                drawCross(self.lb_x[i], self.lb_y[i], painter, size=6)
+                # filled (color)
+                pen.setWidth(8)
+                pen.setColor(QColor(colorsets[i + 1]))
                 painter.setPen(pen)
                 drawCross(self.lb_x[i], self.lb_y[i], painter, size=6)
 
-
-        if self.pixmap is not None:
-            painter.setOpacity(0.0)
-            painter.drawPixmap(0, 0, self.pixmap)
+        # if self.pixmap is not None:
+        #     print("pixmap")
+        #     painter.setOpacity(0.0)
+        #     painter.drawPixmap(0, 0, self.pixmap)
 
         painter.end()
+
+         # cursor
+        img_cur = QPixmap(30, 30)
+        img_cur.fill(QColor(0, 0, 0, 0))
+        paint_cur = QPainter(img_cur)
+        paint_cur.drawPixmap(0, 0, img_cur)
+        pen = QPen()
+        pen.setStyle(Qt.SolidLine)
+        i = self.label_counter
+        # border (black)
+        pen.setWidth(10)
+        pen.setColor(QColor(colorsets[0]))
+        paint_cur.setPen(pen)
+        drawCross(15, 15, paint_cur, size=6)
+        # filled (color)
+        pen.setWidth(8)
+        pen.setColor(QColor(colorsets[i + 1]))
+        paint_cur.setPen(pen)
+        drawCross(15, 15, paint_cur, size=6)
+        # set curor
+        self.setCursor(QCursor(img_cur))
+        paint_cur.end()
 
     def mouseMoveEvent(self, evt):
         self.mx, self.my = evt.x(), evt.y()
@@ -343,7 +401,8 @@ def getIdx8QImg(img, k): # k=20
     nc = len(colormap) - 1  # exclude 0: background color
 
     # background color
-    qImg.setColor(0, colormap[0].rgba())
+    # qImg.setColor(0, colormap[0].rgba())
+    qImg.setColor(0, QColor(0, 0, 0, 160).rgba())
     # cluster color
     for i in range(k):
         qImg.setColor(i + 1, colormap[(i % nc) + 1].rgba()) # use '%' to iterate the colormap

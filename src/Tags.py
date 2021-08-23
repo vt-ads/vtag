@@ -13,21 +13,25 @@ class VTags():
                         k      = k * n_tags,
                         bounds = [],
         )
+        # all IMGS is (n, h, w, -1)
         self.IMGS = dict(
-                        bw  = None,
                         rgb = None,
+                        bw  = None,
                         mov = None,
                         edg = None,
+                        pred= None,
+
         )
         self.OUTS = dict(
-                        cts = None,    # (y, x) coordinate of centers of each k
-                        cls = None,    # clusters
+                        features = None,    # (y, x) coordinate of centers of each k
                         pos_yx  = None, # (y, x) coordinate of edges
                         k_to_id = None,
                         pcs = None,
-                        pred = None,
                         pred_cls = None,
-                        labels = None
+                        pred_labels = None,
+                        labels = None,
+                        # not used
+                        cls = None   # clusters
         )
 
     def load(self, path=".", h5=None, n=-1, bounds=[]):
@@ -63,17 +67,20 @@ class VTags():
             else:
                 self.ARGS["bounds"] = np.array(bounds)
 
-            self.IMGS["rgb"]    = imgs_rgb
-            self.IMGS["bw"]     = imgs_rgb.sum(axis=3)
-            self.IMGS["mov"]    = np.zeros((n, h, w), dtype=np.float32)
-            self.IMGS["edg"]    = np.zeros((n, h, w), dtype=np.uint8)
+            self.IMGS["rgb"]      = imgs_rgb
+            self.IMGS["bw"]       = imgs_rgb.sum(axis=3)
+            self.IMGS["mov"]      = np.zeros((n, h, w), dtype=np.float32)
+            self.IMGS["edg"]      = np.zeros((n, h, w), dtype=np.uint8)
+            self.IMGS["pred"]     = np.zeros((n, h, w), dtype=np.uint8)
+            self.IMGS["pred_cls"] = np.zeros((n, h, w), dtype=np.uint8)
 
-            self.OUTS["cls"]      = n * [None]
-            self.OUTS["pos_yx"]   = n * [None]
-            self.OUTS["k_to_id"]  = np.zeros((n, self.ARGS["k"]))
-            self.OUTS["pcs"]      = np.zeros((n, self.ARGS["k"], 2))
-            self.OUTS["pred"]     = np.zeros((n, h, w), dtype=np.uint8)
-            self.OUTS["pred_cls"] = np.zeros((n, h, w), dtype=np.uint8)
+            self.OUTS["pos_yx"]      = n * [None]
+            self.OUTS["features"]    = np.zeros((n, self.ARGS["k"], 24))
+            self.OUTS["k_to_id"]     = np.zeros((n, self.ARGS["k"]))
+            self.OUTS["pcs"]         = np.zeros((n, self.ARGS["k"], 2))
+            self.OUTS["pred_labels"] = np.zeros((n, self.ARGS["n_id"], 2), dtype=np.int)
+            # not used
+            self.OUTS["cls"]         = n * [None]
 
         self.OUTS["labels"] = load_labels(self.ARGS["n"], self.ARGS["n_id"])
 
@@ -83,6 +90,7 @@ class VTags():
         self.detect_clusters()
         self.map_k_to_id()
         self.make_predictions()
+        self.create_labels()
 
     def detect_movements(self):
         '''
@@ -143,8 +151,8 @@ class VTags():
                 conv = convolve2d(conv, k_gauss, mode="same")
                 conv = get_binary(conv, cutabs=.5)
             imgs_edg[i] = conv
-            # create reduncdent pixel
-            imgs_edg[i, 10:20, 10:20] = 1 # in the feature it's (14, 14)
+            # create fake signals to avoid empty array error
+            imgs_edg[i, 5:10, 5:10] = 1
             # find pos of edges and filter edges by safe area (boundary)
             pos_yx_tmp = find_nonzeros(imgs_edg[i])
             pos_yx[i]  = filter_edges(pos_yx_tmp, bounds)
@@ -169,14 +177,14 @@ class VTags():
             except Exception as e:
                 print(e)
 
-        self.OUTS["cts"] = centers
+        self.OUTS["features"] = centers
 
     def map_k_to_id(self):
         '''
         '''
         n            = self.ARGS["n"]
         k            = self.ARGS["n_id"]
-        features_all = self.OUTS["cts"]
+        features_all = self.OUTS["features"]
 
         for i in range(n):
             self.OUTS["k_to_id"][i], self.OUTS["pcs"][i] =\
@@ -189,8 +197,8 @@ class VTags():
         clts     = self.OUTS["cls"]
         pos_yx   = self.OUTS["pos_yx"]
         k_to_id  = self.OUTS["k_to_id"]
-        pred     = self.OUTS["pred"]
-        pred_clt = self.OUTS["pred_cls"]
+        pred     = self.IMGS["pred"]
+        pred_clt = self.IMGS["pred_cls"]
 
         for i in range(n):
             if clts[i] is not None:
@@ -204,15 +212,24 @@ class VTags():
                 # show clusters
                 pred_clt[i][pts[:, 0], pts[:, 1]] = clt + 1 # cluster from 1 to k
 
+    def create_labels(self):
+        pred     = self.IMGS["pred"]
+        clusters = make_labels(pred)
+        self.OUTS["pred_labels"] = sort_clusters(clusters, pred)
+
     def set_labels(self, i, x, y):
-        new_labels = np.array([x, y]).swapaxes(0, 1).reshape(-1)
+        """
+        x, y: array of coordinates of x or y
+        """
+        new_labels = np.array([x, y]).swapaxes(0, 1)[:, [1, 0]] # makes it (y, x)
         self.OUTS["labels"][i] = new_labels
 
     def save(self, h5="model.h5"):
         pickle.dump((self.ARGS, self.IMGS, self.OUTS), open(h5, "wb"))
 
     def save_labels(self, file="labels.csv"):
-        labels = self.OUTS["labels"]
-        dt = pd.DataFrame(labels)
-        dt.to_csv(file, index=False)
-        print("--- Label saved ---")
+        labels = self.OUTS["pred_labels"]
+        n_ids = self.ARGS["n_id"]
+        save_labels(labels, n_ids, file)
+
+

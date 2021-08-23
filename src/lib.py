@@ -1,17 +1,26 @@
-# import imageio
+# basic
 import os
 import sys
 import time
 import copy
 import pickle
+# cv2
 import cv2 as cv
+# matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.path as mpath
+# pyqtgraph
 import pyqtgraph as pg
+# pandas
 import pandas as pd
+# numpy
 import numpy  as np
+# scipy
 from scipy.signal import spline_filter, convolve, convolve2d, find_peaks
+from scipy.stats import pearsonr
+# skimage
 from skimage.measure       import block_reduce
+# sklearn
 from sklearn               import cluster, datasets, mixture
 from sklearn.cluster       import AgglomerativeClustering
 from sklearn.neighbors     import kneighbors_graph
@@ -19,14 +28,12 @@ from sklearn.mixture       import GaussianMixture
 from sklearn.linear_model  import LinearRegression
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
-from itertools import cycle, islice
-
-
+# pyqt5
 from PyQt5.QtGui import (QPixmap, QImage, QPaintDevice, QPainter,
                          qRgb, QColor, QPen, QBrush)
-from PyQt5.QtWidgets import (QApplication, QPushButton, QWidget, QLabel, QSlider,
-                                QGridLayout,  QVBoxLayout, QHBoxLayout, QSizePolicy,
-                             QButtonGroup, QRadioButton)
+from PyQt5.QtWidgets import (QApplication, QPushButton, QWidget, QLabel,
+                             QSlider, QGridLayout, QVBoxLayout, QHBoxLayout,
+                             QSizePolicy, QButtonGroup, QRadioButton)
 from PyQt5.QtCore import Qt, QTimer, QObject, QThread, pyqtSignal
 
 # === === === === === === === QT === === === === === === ===
@@ -59,11 +66,66 @@ def detect_imgs(imgs, frame, span=1):
 def load_labels(n_frames, k):
     try:
         labels = pd.read_csv("labels.csv")
-        labels = np.array(labels)
+        labels = lb_from_pd_to_np(labels)
     except:
-        labels = np.zeros((n_frames, k * 2), dtype=np.int)
+        labels = np.zeros((n_frames, k, 2), dtype=np.int)
 
     return labels
+
+
+def make_labels(imgs_p):
+    n_frames = len(imgs_p)
+    n_ids = np.max(imgs_p)
+
+    labels = np.zeros((n_frames, n_ids, 2), dtype=np.int)
+
+    for i in range(n_frames):
+        for ki in range(n_ids):
+            y, x = np.nonzero(imgs_p[i] == (ki + 1))
+            if (len(y) > 0) and (len(x) > 0):
+                labels[i, ki] = np.median(y), np.median(x)
+    return labels
+
+
+def lb_from_np_to_pd(labels):
+    n = len(labels)
+    return np.array(labels).reshape((n, -1))
+
+
+def lb_from_pd_to_np(labels):
+    n = len(labels)
+    return np.array(labels).reshape((n, -1, 2))
+
+
+def sort_clusters(clusters_inputs, imgs):
+    clusters = clusters_inputs.copy()
+    n_frames, k, _ = clusters.shape
+    for i in range(n_frames - 1):  # the last frame is not applicable
+        img = imgs[i + 1]
+        # 0-0, 0-1, 0-2, 1-0, 1-1
+        for k1 in range(0, k - 1):
+            ls_dist = []
+
+            for k2 in range(k1, k):
+                ls_dist += [distance(clusters[i][k1],
+                                     clusters[i + 1][k2])]
+            # find min idx
+            idx_min = np.where(ls_dist == np.min(ls_dist))[0][0] + k1
+
+            # swap centers at i+1
+            tmp = clusters[i + 1][k1].copy()
+            clusters[i + 1][k1] = clusters[i + 1][idx_min]
+            clusters[i + 1][idx_min] = tmp
+
+            # swap image values
+            value_min = idx_min + 1  # 0 -> 1, 1 -> 2
+            value_k1  = k1 + 1
+            img[img == value_min] = 9
+            img[img == value_k1]  = value_min
+            img[img == 9]        = value_k1
+
+    return clusters
+
 
 # === === === === === === === QT === === === === === === ===
 
@@ -487,3 +549,14 @@ def fit_linear(pts):
 
 def distance_to_line(a, b, c, x, y):
     return np.abs(a*x + b*y + c) / (a**2 + b**2)**.5
+
+
+
+def save_labels(labels, n_ids, file="labels.csv"):
+    colnames = np.array([["k%d_y" % i, "k%d_x" % i]
+                         for i in range(n_ids)]).reshape(-1)
+    labels = lb_from_np_to_pd(labels)
+    dt = pd.DataFrame(labels)
+    dt.columns = colnames
+    dt.to_csv(file, index=False)
+    print("--- Label saved ---")
