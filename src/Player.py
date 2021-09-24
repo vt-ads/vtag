@@ -1,6 +1,7 @@
 from PyQt5.QtGui import QCursor
 from lib import *
 from Tags import VTags
+from Playback import Playback
 
 colorsets = np.array(["#000000",
                       "#ffff33", "#f94144", "#f3722c", "#f8961e", "#f9844a",
@@ -13,8 +14,8 @@ class Player(QWidget):
         self.setMouseTracking(True)
 
         # WD
+        dataname = "group_small"
         dataname = "group"
-        # dataname = "one_pig"
         os.chdir(folder)
         os.chdir(dataname)
 
@@ -23,19 +24,18 @@ class Player(QWidget):
         # Frames
         self.folder  = folder
         self.paths   = ls_files()
+        self.playback = Playback()
         self.frame   = QFrame()
         self.plot    = pg.plot()
-        self.n_frame = len(self.paths)
+        self.n_frame = 0
         self.i_frame = 0
         self.lb_frame = QLabel("Frame: %d" % self.i_frame)
         self.fps      = 12.5 / 1000
-
         # Predictions
         self.sli_thre = QSlider(Qt.Horizontal, self)
         self.lb_thre  = QLabel("Threshold: %.3f" % (self.sli_thre.value()/1000))
         self.sli_span = QSlider(Qt.Horizontal, self)
         self.lb_span  = QLabel("Span: %d" % self.sli_span.value())
-
         # Status
         self.is_play = False
         self.label_counter = 0
@@ -43,9 +43,9 @@ class Player(QWidget):
         self.timer  = QTimer(self)
 
         # GUI
-        self.buttons = dict(browse= QPushButton("Browse"),
-                            show_lbs= QPushButton("Hide Labels"),
-                            show_pred= QPushButton("Hide Predictions"),
+        self.buttons = dict(browse    = QPushButton("Browse"),
+                            show_lbs  = QPushButton("Hide Labels"),
+                            show_pred = QPushButton("Hide Predictions"),
                             play  = QPushButton("Play"),
                             next  = QPushButton("Next frame > "),
                             prev  = QPushButton("< Previous frame"),
@@ -53,13 +53,26 @@ class Player(QWidget):
         self.toggles = dict(edges = QRadioButton("Edges"),
                             cls   = QRadioButton("Clusters"),
                             pre   = QRadioButton("Predictions"))
-        self.playback = QSlider(Qt.Horizontal, self)
+        self.globalrec = dict(frame = QRect(0, 0, 0, 0),
+                              play  = QRect(0, 0, 0, 0))
 
-        # VTags
+        # init
+        self.load_VTags()
+        self.init_runtime()
+        self.initUI()
+        self.update_frames()
+
+
+    def load_VTags(self):
         self.ARGS, self.IMGS, self.OUTS = pickle.load(open("model.h5", "rb"))
         self.toggles["pre"].setChecked(True)
         self.imgs_show = self.IMGS["pred"]  # define what show on the screen
-
+        self.n_frame   = self.ARGS["n"]
+        self.playback.set_n(self.n_frame)
+        if self.ARGS["n_id"] == 2:
+            pre_grp = np.array(pd.read_csv("labels.csv")).reshape((self.n_frame, 2, 2))
+            dist    = np.array([distance(p1, p2) for p1, p2 in pre_grp])
+            self.playback.set_heat(dist)
         # try load existing labels
         try:
             labels = pd.read_csv("labels.csv")
@@ -67,12 +80,7 @@ class Player(QWidget):
         except Exception as e:
             print(e)
 
-        # init
-        self.update_frames()
-        self.initRuntime()
-        self.initUI()
-
-    def initRuntime(self):
+    def init_runtime(self):
         self.timer.timeout.connect(self.next_frames)
         self.buttons["show_lbs"].clicked.connect(self.toggle_lbs)
         self.buttons["show_pred"].clicked.connect(self.toggle_pred)
@@ -84,7 +92,6 @@ class Player(QWidget):
         self.toggles["edges"].clicked.connect(self.toggle)
         self.toggles["cls"].clicked.connect(self.toggle)
         self.toggles["pre"].clicked.connect(self.toggle)
-        self.playback.valueChanged.connect(self.traverse_frames)
         self.sli_span.valueChanged.connect(self.change_span)
         self.sli_thre.valueChanged.connect(self.change_thre)
 
@@ -141,25 +148,22 @@ class Player(QWidget):
         self.sli_span.setTickInterval(1)
         self.sli_span.setVisible(False)
 
-        self.playback.setMinimum(0)
-        self.playback.setMaximum(self.n_frame - 1)
-        self.playback.setValue(0)
-        self.playback.setTickPosition(QSlider.NoTicks)
-        self.playback.setTickInterval(1)
-
         # Layout
         layout = QGridLayout(self)
         self.buttons["save"].setSizePolicy(QSizePolicy.Expanding,
                                            QSizePolicy.Expanding)
-        self.frame.setSizePolicy(QSizePolicy.Maximum,
-                                 QSizePolicy.Maximum)
+        self.frame.setSizePolicy(QSizePolicy.Expanding,
+                                 QSizePolicy.Expanding)
+        self.playback.setSizePolicy(QSizePolicy.Expanding,
+                                      QSizePolicy.Expanding)
         self.frame.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
         # layout.addWidget(self.buttons["browse"], 0, 0, 1, 4)
         layout.addWidget(self.frame,             1, 0, 1, 3, alignment=Qt.AlignLeft)
         layout.addWidget(self.plot,              1, 3, 1, 2, alignment=Qt.AlignRight)
         layout.addWidget(self.lb_frame,          2, 0, 1, 1)
-        layout.addWidget(self.playback,          3, 0, 1, 3)
+        # layout.addWidget(self.playback,          3, 0, 1, 3)
+        layout.addWidget(self.playback,        3, 0, 1, 3)
         layout.addWidget(self.toggles["edges"],  4, 0, 1, 1)
         layout.addWidget(self.toggles["cls"],    4, 1, 1, 1)
         layout.addWidget(self.toggles["pre"],    4, 2, 1, 1)
@@ -221,10 +225,10 @@ class Player(QWidget):
     def update_frames(self):
         i = self.i_frame
         self.set_plot()
-        self.playback.setValue(i)
         self.lb_frame.setText("Frame: %d" % i)
         self.frame.setPixmap(QPixmap(self.paths[i]))
         self.frame.set_predict(self.imgs_show[i])
+        self.playback.set_frame(self.i_frame)
         # show labels from the displayed frames
         k      = self.ARGS["n_id"]
         labels = self.OUTS["pred_labels"]
@@ -233,6 +237,13 @@ class Player(QWidget):
         self.frame.set_label(x, y)
         # update GUI
         self.frame.repaint()
+        self.update_globalrec()
+
+    def update_globalrec(self):
+        self.globalrec["frame"] = QRect(self.frame.mapToParent(QPoint(0, 0)),
+                                        self.frame.size())
+        self.globalrec["play"] = QRect(self.playback.mapToParent(QPoint(0, 0)),
+                                        self.playback.size())
 
     def change_span(self):
         self.lb_span.setText("Span: %d" % self.sli_span.value())
@@ -258,8 +269,8 @@ class Player(QWidget):
             self.timer.stop()
 
     def mousePressEvent(self, evt):
-        if self.frame.rect().contains(evt.pos()):
-
+        self.update_globalrec()
+        if self.globalrec["frame"].contains(evt.pos()):
             # collect info
             k       = self.ARGS["n_id"]
             labels  = self.OUTS["pred_labels"]
@@ -282,6 +293,20 @@ class Player(QWidget):
                 self.next_frames()
             else:
                 self.update_frames()
+
+        elif self.globalrec["play"].contains(evt.pos()):
+            self.change_status(not self.is_play)
+
+    def mouseMoveEvent(self, evt):
+        self.update_globalrec()
+        if self.globalrec["play"].contains(evt.pos()):
+            x_mouse = evt.pos().x()
+            x_play  = self.playback.mapToParent(QPoint(0, 0)).x()
+            frame   = int((x_mouse - x_play) // self.playback.bin)
+            if frame > (self.n_frame - 1):
+                frame = self.n_frame - 1
+            self.i_frame = frame
+        self.update_frames()
 
 
 class QFrame(QLabel):
@@ -402,7 +427,8 @@ def getIdx8QImg(img, k): # k=20
 
     # background color
     # qImg.setColor(0, colormap[0].rgba())
-    qImg.setColor(0, QColor(0, 0, 0, 160).rgba())
+    qImg.setColor(0, QColor(0, 0, 0, 255).rgba())
+    qImg.setColor(0, QColor(0, 0, 0, 200).rgba())
     # cluster color
     for i in range(k):
         qImg.setColor(i + 1, colormap[(i % nc) + 1].rgba()) # use '%' to iterate the colormap
@@ -414,6 +440,8 @@ def getGrayQImg(img):
     qImg = QImage(img.astype(np.uint8).copy(), w,
                   h, w*1, QImage.Format_Grayscale8)
     return QPixmap(qImg)
+
+
 
 
 

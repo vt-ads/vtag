@@ -4,14 +4,14 @@ from Tags import VTags
 
 # Input
 # dataname = "one_pig"
-dataname = "group"
+dataname = "group_small"
 
 # WD
 path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/"
 os.chdir(path_project + dataname)
 
 # Detailed run
-# app = VTags(k=1, n_tags=20)
+# app = VTags(k=2, n_tags=10)
 # bound_x = [180, 730, 725, 170]
 # bound_y = [70,  90,  460, 440]
 # bounds = np.array([[y, x] for x, y in zip(bound_x, bound_y)])
@@ -44,6 +44,12 @@ os.chdir(path_project + dataname)
 ### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # generate features
 features = app.OUTS["features"]
+
+
+os.chdir(path_project + "group")
+pre_grp = np.array(pd.read_csv("labels.csv")).reshape((30, 2, 2))
+dist = np.array([distance(p1, p2) for p1, p2 in pre_grp])
+len(dist)
 
 
 ### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---

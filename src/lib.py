@@ -34,7 +34,7 @@ from PyQt5.QtGui import (QPixmap, QImage, QPaintDevice, QPainter,
 from PyQt5.QtWidgets import (QApplication, QPushButton, QWidget, QLabel,
                              QSlider, QGridLayout, QVBoxLayout, QHBoxLayout,
                              QSizePolicy, QButtonGroup, QRadioButton)
-from PyQt5.QtCore import Qt, QTimer, QObject, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QTimer, QRect, QObject, QThread, pyqtSignal, QPoint
 
 # === === === === === === === QT === === === === === === ===
 
@@ -432,7 +432,7 @@ def map_features_to_id(features, k, use_pca=False):
     else:
         #-- Get PCs from features, and cluster into k+1 groups
         pca = PCA(2)
-        pca.fit(features)
+        pca.fit(features) 
         # pcs = pca.transform(features) * pca.explained_variance_ratio_
         pcs = pca.transform(features)
         # ids, _ = cv_k_means(pcs, k)
@@ -551,7 +551,6 @@ def distance_to_line(a, b, c, x, y):
     return np.abs(a*x + b*y + c) / (a**2 + b**2)**.5
 
 
-
 def save_labels(labels, n_ids, file="labels.csv"):
     colnames = np.array([["k%d_y" % i, "k%d_x" % i]
                          for i in range(n_ids)]).reshape(-1)
@@ -559,4 +558,3 @@ def save_labels(labels, n_ids, file="labels.csv"):
     dt = pd.DataFrame(labels)
     dt.columns = colnames
     dt.to_csv(file, index=False)
-    print("--- Label saved ---")

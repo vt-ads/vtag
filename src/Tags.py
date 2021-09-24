@@ -23,8 +23,8 @@ class VTags():
 
         )
         self.OUTS = dict(
-                        features = None,    # (y, x) coordinate of centers of each k
-                        pos_yx  = None, # (y, x) coordinate of edges
+                        features = None, # (y, x) coordinate of centers of each k
+                        pos_yx  = None,  # (y, x) coordinate of edges
                         k_to_id = None,
                         pcs = None,
                         pred_cls = None,
