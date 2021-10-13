@@ -1,20 +1,5 @@
 from lib import *
 
-alpha = 200
-palette_viridis = [
-    QColor(68, 1, 84, alpha),
-    QColor(72, 40, 62, alpha),
-    QColor(62, 74, 137, alpha),
-    QColor(49, 104, 142, alpha),
-    QColor(38, 130, 142, alpha),
-    QColor(31, 158, 137, alpha),
-    QColor(53, 183, 121, alpha),
-    QColor(109, 205, 89, alpha),
-    QColor(180, 222, 44, alpha),
-    QColor(253, 231, 37, alpha)
-]
-palette_viridis.reverse()
-
 class Playback(QWidget):
 
     def __init__(self):
@@ -47,8 +32,8 @@ class Playback(QWidget):
 
     def paintEvent(self, evt):
         super().paintEvent(evt)
-        self.w = self.size().width()
-        self.h = self.size().height()
+        self.w   = self.size().width()
+        self.h   = self.size().height()
         self.bin = (self.w / self.n)
         # plot color
         painter = QPainter(self)
@@ -74,7 +59,7 @@ class Playback(QWidget):
         painter.drawLine(0, 0, self.w, 0)
         painter.drawLine(self.w, 0, self.w, self.h)
         painter.drawLine(self.w, self.h, 0, self.h)
-        painter.drawLine(self.h, 0, 0, 0)
+        painter.drawLine(0, self.h, 0, 0)
 
 def draw_vline(painter, pos, height):
     painter.drawLine(pos, 0, pos, height)

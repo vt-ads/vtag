@@ -2,9 +2,10 @@ from typing_extensions import runtime
 from PyQt5.QtGui import QCursor
 from pandas.core import frame
 from lib import *
-from Tags import VTags
+from VTags import VTags
 from Playback import Playback
 from DnD import DnDLineEdit
+from VTFrame import VTFrame
 
 class Player(QWidget):
     def __init__(self, args):
@@ -12,11 +13,12 @@ class Player(QWidget):
         self.setMouseTracking(True)
 
         # wd
-        self.wd = ""
+        self.wd       = ""
         self.dataname = ""
+        self.args     = args
         # Predictions
         self.imgs_show = []
-        self.alpha = 200
+        self.alpha     = 200
         # Frames
         self.n_frame  = 0
         self.i_frame  = 0
@@ -28,23 +30,35 @@ class Player(QWidget):
         self.timer  = QTimer(self)
 
         # init
-        self.init_args(args)
+        self.init_args()
         self.init_UI()
-        self.load_frames()
         self.init_runtime()
+        self.init_data()
+
+    def init_data(self):
+        self.paths = ls_files()
         try:
             # try loading VTag outputs
             self.load_annotations()
-            self.has_anno = True
+            self.playback.set_n(self.n_frame)
+            self.has_anno          = True
+            self.frame.show_detect = True
+            self.groups["anno"].setEnabled(True)
         except Exception as e:
+            self.n_frame = len(self.paths)
+            self.playback.set_n(self.n_frame)
+            self.playback.set_heat([0] * self.n_frame)
+            self.has_anno = False
+            self.frame.show_detect = False
+            self.groups["anno"].setEnabled(False)
             print(e)
         self.update_frames()
 
-    def init_args(self, args,
-                    # default arguments
-                    dataname="group",
-                    fps=10/1000):
+    def init_args(self, # default arguments
+                        dataname="group",
+                        fps=10/1000):
         # extract args
+        args = self.args
         n_args = len(args)
         for i in range(n_args):
             if args[i]   == "-data":
@@ -64,30 +78,33 @@ class Player(QWidget):
 
     def init_UI(self):
         # init components
-        self.frame     = QFrame()
+        self.frame     = VTFrame()
         self.playback  = Playback()
 
-        self.texts     = dict(wd        = DnDLineEdit())
-        self.labels    = dict(frame     = QLabel("Frame: %d" % self.i_frame),
-                              fps       = QLabel("Frame per second (FPS): %d" %
-                                                 int(self.fps * 1000)),
-                              wd        = QLabel("Data directory"),
-                              alpha     = QLabel("Opacity: %d / 255" % self.alpha))
-        self.buttons   = dict(wd        = QPushButton("Browse"),
-                              play      = QPushButton(""),
-                              next      = QPushButton(""),
-                              prev      = QPushButton(""),
-                              run       = QPushButton("Analyze video"),
-                              save      = QPushButton("Save labels"))
-        self.check     = dict(lbs       = QCheckBox("Show labels"),
-                              contours  = QCheckBox("Show contours"))
-        self.sliders   = dict(fps       = QSlider(Qt.Horizontal, self),
-                              alpha     = QSlider(Qt.Horizontal, self))
-        self.toggles   = dict(edges     = QRadioButton("Edges"),
-                              cls       = QRadioButton("Clusters"),
-                              pre       = QRadioButton("Predictions"))
-        self.globalrec = dict(frame     = QRect(0, 0, 0, 0),
-                              play      = QRect(0, 0, 0, 0))
+        self.texts     = dict(wd       = DnDLineEdit())
+        self.groups    = dict(display  = QGroupBox("Display Mode"),
+                              anno     = QGroupBox("Annotations"))
+
+        self.labels    = dict(frame    = QLabel("Frame: %d" % self.i_frame),
+                              fps      = QLabel("Frame per second (FPS): %d" %
+                                                int(self.fps * 1000)),
+                              wd       = QLabel("Data directory"),
+                              alpha    = QLabel("Opacity: %d / 255" % self.alpha))
+        self.buttons   = dict(wd       = QPushButton("Browse"),
+                              play     = QPushButton(""),
+                              next     = QPushButton(""),
+                              prev     = QPushButton(""),
+                              run      = QPushButton("Analyze video"),
+                              save     = QPushButton("Save labels"))
+        self.check     = dict(lbs      = QCheckBox("Show labels"),
+                              contours = QCheckBox("Show contours"))
+        self.sliders   = dict(fps      = QSlider(Qt.Horizontal, self),
+                              alpha    = QSlider(Qt.Horizontal, self))
+        self.toggles   = dict(edges    = QRadioButton("Edges"),
+                              cls      = QRadioButton("Clusters"),
+                              pre      = QRadioButton("Predictions"))
+        self.globalrec = dict(frame    = QRect(0, 0, 0, 0),
+                              play     = QRect(0, 0, 0, 0))
 
         # WD
         self.texts["wd"].setText(self.wd)
@@ -135,13 +152,9 @@ class Player(QWidget):
         self.setGeometry(50, 50, 1400, 550)
         self.show()
 
-    def load_frames(self):
-        self.paths   = ls_files()
-        self.n_frame = len(self.paths)
-        self.playback.set_n(self.n_frame)
-
     def load_annotations(self):
         self.ARGS, self.IMGS, self.OUTS = pickle.load(open("model.h5", "rb"))
+        self.n_frame = self.ARGS["n"]
         # define predictions
         self.toggles["pre"].setChecked(True)
         self.imgs_show = self.IMGS["pred"]  # define what show on the screen
@@ -172,12 +185,12 @@ class Player(QWidget):
         self.sliders["alpha"].valueChanged.connect(self.set_alpha)
 
     def browse_wd(self):
-        # fileter = "Images (*.tif *.jpg *.jpeg *.png)"
-        # path = QFileDialog().getExistingDirectory(self, "", "", fileter)[0]
         self.wd = QFileDialog().getExistingDirectory(self, "", "")
+        os.chdir(self.wd)
         self.dataname = self.wd.split("/")[-1]
         self.texts["wd"].setText(self.wd)
         self.labels["wd"].setText("Data directory: %s" % self.dataname)
+        self.init_data()
 
     def set_fps(self):
         new_fps = self.sliders["fps"].value()
@@ -217,7 +230,6 @@ class Player(QWidget):
         n_ids  = self.ARGS["n_id"]
         save_labels(labels, n_ids, "labels.csv")
 
-
     def set_layout(self):
         # style
         self.setStyleSheet("""
@@ -237,41 +249,45 @@ class Player(QWidget):
         """)
 
         # layout tab
-        layout_tab = QGridLayout(self)
-        layout_tab.addWidget(self.labels["wd"], 0, 0, alignment=Qt.AlignBottom)
-        layout_tab.addWidget(self.texts["wd"], 1, 0, 1, 3, alignment=Qt.AlignTop)
-        layout_tab.addWidget(self.buttons["wd"], 1, 3, alignment=Qt.AlignTop)
-        layout_tab.addWidget(self.labels["fps"], 2, 0, 1, 2, alignment=Qt.AlignBottom)
-        layout_tab.addWidget(self.sliders["fps"], 3, 0, 1, 2, alignment=Qt.AlignTop)
-        layout_tab.addWidget(self.labels["alpha"], 2, 2, 1, 2, alignment=Qt.AlignBottom)
-        layout_tab.addWidget(self.sliders["alpha"], 3, 2, 1, 2, alignment=Qt.AlignTop)
-
-        grp_display = QGroupBox("Display mode")
+        self.groups["display"] = QGroupBox("Display mode")
         layout_grp_display = QVBoxLayout()
         layout_grp_display.addWidget(self.toggles["edges"])
         layout_grp_display.addWidget(self.toggles["cls"])
         layout_grp_display.addWidget(self.toggles["pre"])
-        grp_display.setLayout(layout_grp_display)
+        print('set dis')
+        self.groups["display"].setLayout(layout_grp_display)
 
-        grp_ann = QGroupBox("Annotations")
-        layout_grp_ann = QVBoxLayout()
-        layout_grp_ann.addWidget(self.check["lbs"])
-        layout_grp_ann.addWidget(self.check["contours"])
-        grp_ann.setLayout(layout_grp_ann)
+        self.groups["anno"] = QGroupBox("Annotations")
+        layout_grp_ann = QGridLayout(self)
+        layout_grp_ann.addWidget(
+            self.labels["alpha"], 0, 0, 1, 2, alignment=Qt.AlignBottom)
+        layout_grp_ann.addWidget(
+            self.sliders["alpha"], 1, 0, 1, 2, alignment=Qt.AlignTop)
+        layout_grp_ann.addWidget(self.groups["display"], 2, 0, 2, 1)
+        layout_grp_ann.addWidget(self.check["lbs"],      2, 1)
+        layout_grp_ann.addWidget(self.check["contours"], 3, 1)
+        print('set anoo')
+        self.groups["anno"].setLayout(layout_grp_ann)
 
-        layout_tab.addWidget(grp_display,  4, 0, 1, 2)
-        layout_tab.addWidget(grp_ann,      4, 2, 1, 2)
-        self.config.setLayout(layout_tab)
+        layout_config = QGridLayout(self)
+        layout_config.addWidget(self.labels["wd"], 0, 0, alignment=Qt.AlignBottom)
+        layout_config.addWidget(self.texts["wd"], 1, 0, 1, 3, alignment=Qt.AlignTop)
+        layout_config.addWidget(self.buttons["wd"], 1, 3, alignment=Qt.AlignTop)
+        layout_config.addWidget(self.labels["fps"], 2, 0, 1, 4, alignment=Qt.AlignBottom)
+        layout_config.addWidget(self.sliders["fps"], 3, 0, 1, 4, alignment=Qt.AlignTop)
+        layout_config.addWidget(self.groups["anno"], 4, 0, 1, 4)
+        print('set config')
+        self.config.setLayout(layout_config)
 
         # layout main
         layout = QGridLayout(self)
-        layout.addWidget(self.frame,     0, 0, 1, 4, alignment=Qt.AlignCenter)
-        layout.addWidget(self.tabs,      0, 4, 1, 2, alignment=Qt.AlignCenter)
+        layout.addWidget(self.frame,  0, 0, 1, 4, alignment=Qt.AlignCenter)
+        layout.addWidget(self.tabs,   0, 4, 1, 2, alignment=Qt.AlignCenter)
         layout.addWidget(self.labels["frame"], 1, 0, 1, 3)
         layout.addWidget(self.buttons["prev"], 2, 0)
         layout.addWidget(self.buttons["play"], 2, 1)
         layout.addWidget(self.buttons["next"], 2, 2)
-        layout.addWidget(self.playback,        1, 3, 2, 1)
+        layout.addWidget(self.playback,  1, 3, 2, 1)
         layout.addWidget(self.buttons["run"],  1, 4, 2, 1)
         layout.addWidget(self.buttons["save"], 1, 5, 2, 1)
         self.setLayout(layout)
@@ -287,7 +303,6 @@ class Player(QWidget):
                                  QSizePolicy.Expanding)
         self.playback.setSizePolicy(QSizePolicy.Expanding,
                                     QSizePolicy.Expanding)
-
 
     def set_plot(self):
         # clear plot
@@ -319,10 +334,10 @@ class Player(QWidget):
 
     def next_frames(self):
         self.i_frame += 1
+        # when at the last frame
         if self.i_frame == self.n_frame:
             self.change_status(to_play=False)
             self.i_frame = 0
-
         self.update_frames()
 
     def prev_frames(self):
@@ -331,17 +346,21 @@ class Player(QWidget):
 
     def update_frames(self):
         i = self.i_frame
-        self.set_plot()
         self.labels["frame"].setText("Frame: %d" % i)
         self.frame.setPixmap(QPixmap(self.paths[i]))
-        self.frame.set_predict(self.imgs_show[i])
         self.playback.set_frame(self.i_frame)
         # show labels from the displayed frames
-        k      = self.ARGS["n_id"]
-        labels = self.OUTS["pred_labels"]
-        x      = labels[i, :, 1]
-        y      = labels[i, :, 0]
-        self.frame.set_label(x, y)
+
+        print("number of show: %d" % len(self.imgs_show))
+        print("n_frame: %d" % self.n_frame)
+        if self.has_anno:
+            self.frame.set_predict(self.imgs_show[i])
+            self.set_plot()
+            k      = self.ARGS["n_id"]
+            labels = self.OUTS["pred_labels"]
+            x      = labels[i, :, 1]
+            y      = labels[i, :, 0]
+            self.frame.set_label(x, y)
         # update GUI
         self.frame.repaint()
         self.update_globalrec()
@@ -409,145 +428,6 @@ class Player(QWidget):
             self.i_frame = frame
         self.update_frames()
 
-
-class QFrame(QLabel):
-    '''
-    Will keep imgRaw, imgVis and imgQmap
-    '''
-
-    def __init__(self):
-        super().__init__()
-        self.setMouseTracking(True)
-        self.pixmap      = None
-        self.img_detect  = None
-        self.show_detect = True
-        self.cx = -20
-        self.cy = -20
-        # mouse moving events
-        self.mx = -1
-        self.my = -1
-        # ground truth
-        self.alpha    = 200
-        self.show_lbs = True
-        self.lb_x = []
-        self.lb_y = []
-        # label counter
-        self.label_counter = 0
-
-    def set_image(self, pixmap):
-        self.pixmap = pixmap
-
-    def set_predict(self, img):
-        self.img_detect = getIdx8QImg(img,  int(np.max(img)), alpha=self.alpha)
-
-    def set_center(self, cx, cy):
-        self.cx = cx
-        self.cy = cy
-
-    def set_label(self, lb_x, lb_y):
-        self.lb_x, self.lb_y = lb_x, lb_y
-
-    def paintEvent(self, event):
-        super().paintEvent(event)
-        painter = QPainter(self)
-        if self.show_detect:
-            # draw detection
-            painter.drawPixmap(0, 0, self.img_detect)
-
-        # draw labels
-        if self.show_lbs:
-            n_labels = len(self.lb_x)
-
-            pen = QPen()
-            pen.setStyle(Qt.SolidLine)
-            for i in range(n_labels):
-                # border (black)
-                pen.setWidth(10)
-                pen.setColor(QColor(colorsets[0]))
-                painter.setPen(pen)
-                drawCross(self.lb_x[i], self.lb_y[i], painter, size=6)
-                # filled (color)
-                pen.setWidth(8)
-                pen.setColor(QColor(colorsets[i + 1]))
-                painter.setPen(pen)
-                drawCross(self.lb_x[i], self.lb_y[i], painter, size=6)
-
-        # if self.pixmap is not None:
-        #     print("pixmap")
-        #     painter.setOpacity(0.0)
-        #     painter.drawPixmap(0, 0, self.pixmap)
-
-        painter.end()
-
-         # cursor
-        img_cur = QPixmap(30, 30)
-        img_cur.fill(QColor(0, 0, 0, 0))
-        paint_cur = QPainter(img_cur)
-        paint_cur.drawPixmap(0, 0, img_cur)
-        pen = QPen()
-        pen.setStyle(Qt.SolidLine)
-        i = self.label_counter
-        # border (black)
-        pen.setWidth(10)
-        pen.setColor(QColor(colorsets[0]))
-        paint_cur.setPen(pen)
-        drawCross(15, 15, paint_cur, size=6)
-        # filled (color)
-        pen.setWidth(8)
-        pen.setColor(QColor(colorsets[i + 1]))
-        paint_cur.setPen(pen)
-        drawCross(15, 15, paint_cur, size=6)
-        # set curor
-        self.setCursor(QCursor(img_cur))
-        paint_cur.end()
-
-    def mouseMoveEvent(self, evt):
-        self.mx, self.my = evt.x(), evt.y()
-
-def getRGBQImg(img):
-    h, w = img.shape[0], img.shape[1]
-    qImg = QImage(img.astype(np.uint8).copy(), w, h, w*3, QImage.Format_RGB888)
-    return QPixmap(qImg)
-
-
-def getBinQImg(img):
-    h, w = img.shape[0], img.shape[1]
-    qImg = QImage(img.astype(np.uint8).copy(), w,
-                  h, w*1, QImage.Format_Indexed8)
-    qImg.setColor(0, qRgb(0, 0, 0))
-    qImg.setColor(1, qRgb(241, 225, 29))
-    return QPixmap(qImg)
-
-
-def getIdx8QImg(img, k, alpha=200): # k=20
-    colormap = [QColor(c) for c in colorsets]
-
-    h, w = img.shape[0], img.shape[1]
-    qImg = QImage(img.astype(np.uint8).copy(), w,
-                  h, w*1, QImage.Format_Indexed8)
-    nc = len(colormap) - 1  # exclude 0: background color
-
-    # background color
-    # qImg.setColor(0, colormap[0].rgba())
-    qImg.setColor(0, QColor(0, 0, 0, alpha).rgba())
-    # cluster color
-    for i in range(k):
-        qImg.setColor(i + 1, colormap[(i % nc) + 1].rgba()) # use '%' to iterate the colormap
-    return QPixmap(qImg)
-
-
-def getGrayQImg(img):
-    h, w = img.shape[0], img.shape[1]
-    qImg = QImage(img.astype(np.uint8).copy(), w,
-                  h, w*1, QImage.Format_Grayscale8)
-    return QPixmap(qImg)
-
-
-colorsets = np.array(["#000000",
-                      "#ffff33", "#f94144", "#f3722c", "#f8961e", "#f9844a",
-                      "#f9c74f", "#90be6d", "#43aa8b", "#4d908e", "#577590",
-                      "#277da1"])
-
 # Note
 # self.thread = QThread(self)
 # self.thread.started.connect(self.update_image)
@@ -562,14 +442,3 @@ colorsets = np.array(["#000000",
     # painter.drawPixmap(result.rect(), p2, p2.rect())
     # painter.end()
     # return result
-
-# colormap = [qRgb(0, 0, 0),       # 0
-#             qRgb(255, 255, 51),  # 1
-#             qRgb(55, 126, 184),  # 2
-#             qRgb(77, 175, 74),   # 3
-#             qRgb(228, 26, 28),   # 4
-#             qRgb(152, 78, 163),  # 5
-#             qRgb(255, 127, 0),   # 6
-#             qRgb(13, 136, 250),  # 7
-#             qRgb(247, 129, 191),  # 8
-#             qRgb(153, 153, 153)]  # 9
