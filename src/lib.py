@@ -29,12 +29,9 @@ from sklearn.linear_model  import LinearRegression
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 # pyqt5
-from PyQt5.QtGui import (QPixmap, QImage, QPaintDevice, QPainter,
-                         qRgb, QColor, QPen, QBrush)
-from PyQt5.QtWidgets import (QApplication, QPushButton, QWidget, QLabel,
-                             QSlider, QGridLayout, QVBoxLayout, QHBoxLayout,
-                             QSizePolicy, QButtonGroup, QRadioButton)
-from PyQt5.QtCore import Qt, QTimer, QRect, QObject, QThread, pyqtSignal, QPoint
+from PyQt5.QtGui     import *
+from PyQt5.QtWidgets import *
+from PyQt5.QtCore    import *
 
 # === === === === === === === QT === === === === === === ===
 
@@ -386,9 +383,9 @@ def extract_features(block, conv_type="temporal"):
             ([[[-1, -2, -1],
                [-2, -4, -2],
                [-1, -2, -1]],
-              [[2, 4, 2],
-               [4, 8, 4],
-               [2, 4, 2]],
+              [[ 2,  4,  2],
+               [ 4,  8,  4],
+               [ 2,  4,  2]],
               [[-1, -2, -1],
                [-2, -4, -2],
                [-1, -2, -1]]]),

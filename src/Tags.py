@@ -135,7 +135,7 @@ class VTags():
 
         k_edge = np.array((
             [-1, -1, -1],
-            [-1, 8, -1],
+            [-1,  8, -1],
             [-1, -1, -1]),
             dtype='int')
         k_gauss = np.array((

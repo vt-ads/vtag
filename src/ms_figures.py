@@ -31,7 +31,7 @@ def cal_error(obs, pre):
     return np.mean(errors, axis=0)
 
 
-# get label from group data
+# get label from group data (swap 173-211)
 os.chdir(path_project + "group")
 pre_grp     = np.array(pd.read_csv("labels.csv"))
 pre_grp_adj = np.array(pd.read_csv("labels_adj.csv"))
@@ -90,7 +90,6 @@ axes.plot(dist[2:-1]/base)
 axes.yaxis.grid(True)
 axes.set_xlabel('Timeframe')
 axes.set_ylabel('Distance Between Pigs (Pixel)')
-
 
 
 # figure: spatial --- --- --- --- --- --- --- --- --- --- --- ---

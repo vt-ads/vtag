@@ -1,11 +1,8 @@
 from PyQt5.QtWidgets import QApplication
 from Player import *
 
-import sys
-import os
-import time
-
 if __name__ == '__main__':
-    app = QApplication(sys.argv)
-    player = Player()
+    args   = sys.argv
+    app    = QApplication(args)
+    player = Player(args)
     sys.exit(app.exec_())

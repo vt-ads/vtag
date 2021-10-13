@@ -52,6 +52,13 @@ dist = np.array([distance(p1, p2) for p1, p2 in pre_grp])
 len(dist)
 
 
+dict_kernel = dict(kernel_1= np.array([36, 8, 8, 4]),
+                  kernel_2 = np.array([36, 8, 8,4]))
+
+for key, value in dict_kernel.items():
+    print("kernel name: ", key)
+    print("kernel: ", value)
+
 ### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # ground truth
 lbs = np.array([pd.read_csv("truth/labels_1.csv"),
@@ -92,6 +99,13 @@ img_sub[img_sub == 1] = 9
 
 np.sum(img==-1)
 
+x = np.array(
+        [[1, 2, 3, 4],
+        [1, 2, 3, 4],
+        [1, 2, 3, 4]])
+x.shape
+
+np.mean(x, axis=0)
 
 
 ids = app.OUTS["k_to_id"]
