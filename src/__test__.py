@@ -1,10 +1,10 @@
 from pyqtgraph.Qt import scale
 from lib import *
-from Tags import VTags
+from VTags import VTags
 
 # Input
 # dataname = "one_pig"
-dataname = "group_small"
+dataname = "group"
 
 # WD
 path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/"
@@ -40,6 +40,95 @@ os.chdir(path_project + dataname)
 # Resume run
 # app = VTags(k=2)
 # app.load(h5="model.h5")
+
+### Strategy comparison --- --- --- --- --- --- --- --- --- --- --- --- ---
+from pyqtgraph.Qt import scale
+from lib import *
+from VTags import VTags
+
+# Input
+dataname = "group"
+
+# WD
+path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/"
+os.chdir(path_project + dataname)
+
+bound_x = [180, 730, 725, 170]
+bound_y = [70,  90,  460, 440]
+bounds = np.array([[y, x] for x, y in zip(bound_x, bound_y)])
+
+s = "new_F"
+app = VTags(k=2, n_tags=20)
+app.load(bounds=bounds)
+app.detect_movements()
+app.detect_edges()
+
+# plt.imshow(app.IMGS["edg"][119])
+
+# k_edge = np.array((
+#     [-1, -1, -1],
+#     [-1,  8, -1],
+#     [-1, -1, -1]),
+#     dtype='int')
+# k_gauss = np.array((
+#     [1, 4, 1],
+#     [4, 9, 4],
+#     [1, 4, 1]),
+#     dtype='int') / 29
+
+# img = app.IMGS["mov"][119]
+# conv = convolve2d(img, k_gauss, mode="same")
+# for _ in range(10):
+#     conv = convolve2d(conv, k_gauss, mode="same")
+# conv = get_binary(conv, cutabs=.5)
+# conv = convolve2d(conv, k_edge, mode="same")
+# conv = get_binary(conv, cutabs=.5)
+
+# tmp = conv.copy()
+# conv[tmp<.5]  = 0
+# conv[tmp>=.5] = 1
+# plt.imshow(conv, cmap="gray")
+# plt.imshow(img, cmap="gray")
+
+app.detect_clusters()
+app.map_k_to_id()
+app.make_predictions()
+app.create_labels()
+
+pred = app.IMGS["pred"]
+lbs = app.OUTS["pred_labels"]
+
+
+clts = make_labels(pred)
+n, k, _ = clts.shape
+
+# 123, 124
+test = lbs[123:126]
+test.shape
+plt.plot(test[:, 0, 0], test[:, 0, 1])
+plt.plot(test[:, 1, 0], test[:, 1, 1])
+ 
+test2 = test.copy()
+tmp = test2[0, 0].copy()
+test2[0, 0] = test2[0, 1].copy()
+test2[0, 1] = tmp
+plt.plot(test2[:, 0, 0], test2[:, 0, 1])
+plt.plot(test2[:, 1, 0], test2[:, 1, 1])
+
+cts     = np.mean(clts, axis=1)
+cts_new = np.array([cts] * k).swapaxes(0, 1)
+vec     = clts - cts_new
+
+diff = vec[1:] - vec[:-1]
+sig = np.abs(np.mean(diff[:, 0], axis=1))
+np.where(sig > 20)
+
+plt.plot(sig)
+vec[39:42]
+
+
+app.save_labels(file="labels_%s.csv" % s)
+app.save(h5="model_%s.h5" % s)
 
 ### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # generate features

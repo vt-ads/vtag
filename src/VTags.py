@@ -20,7 +20,6 @@ class VTags():
                         mov = None,
                         edg = None,
                         pred= None,
-
         )
         self.OUTS = dict(
                         features = None, # (y, x) coordinate of centers of each k
@@ -124,7 +123,7 @@ class VTags():
                 img_tmp = get_binary(imgs_mov_tmp[i], cutabs=cutoff - adjust)
             imgs_mov[i] = img_tmp
 
-    def detect_edges(self, n_denoise=10):
+    def detect_edges(self, n_denoise=3, strategy="J1"):
         '''
         '''
         imgs_mov = self.IMGS["mov"]
@@ -145,17 +144,33 @@ class VTags():
             dtype='int') / 29
 
         for i in range(n):
-            conv = convolve2d(imgs_mov[i], k_edge, mode="same")
-            conv = get_binary(conv)
+            conv = convolve2d(imgs_mov[i], k_gauss, mode="same")
             for _ in range(n_denoise):
                 conv = convolve2d(conv, k_gauss, mode="same")
-                conv = get_binary(conv, cutabs=.5)
+            conv = get_binary(conv, cutabs=.5)
+            conv = convolve2d(conv, k_edge, mode="same")
+            conv = get_binary(conv, cutabs=.5)
             imgs_edg[i] = conv
             # create fake signals to avoid empty array error
             imgs_edg[i, 5:10, 5:10] = 1
             # find pos of edges and filter edges by safe area (boundary)
             pos_yx_tmp = find_nonzeros(imgs_edg[i])
             pos_yx[i]  = filter_edges(pos_yx_tmp, bounds)
+
+        # elif strategy == "F1":
+        #     for i in range(n):
+        #         conv = convolve2d(imgs_mov[i], k_gauss, mode="same")
+        #         for _ in range(n_denoise):
+        #             conv = convolve2d(conv, k_gauss, mode="same")
+        #         conv = get_binary(conv, cutabs=.5)
+        #         conv = convolve2d(conv, k_edge, mode="same")
+        #         conv = get_binary(conv, cutabs=.5)
+        #         imgs_edg[i] = conv
+        #         # create fake signals to avoid empty array error
+        #         imgs_edg[i, 5:10, 5:10] = 1
+        #         # find pos of edges and filter edges by safe area (boundary)
+        #         pos_yx_tmp = find_nonzeros(imgs_edg[i])
+        #         pos_yx[i]  = filter_edges(pos_yx_tmp, bounds)
 
     def detect_clusters(self):
         '''

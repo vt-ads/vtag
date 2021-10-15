@@ -3,11 +3,11 @@ from PyQt5.QtGui import QCursor
 from pandas.core import frame
 from lib import *
 from VTags import VTags
-from Playback import Playback
+from VTPlayback import VTPlayback
 from DnD import DnDLineEdit
 from VTFrame import VTFrame
 
-class Player(QWidget):
+class VTPlayer(QWidget):
     def __init__(self, args):
         super().__init__()
         self.setMouseTracking(True)
@@ -24,6 +24,7 @@ class Player(QWidget):
         self.i_frame  = 0
         # Status
         self.is_play       = False
+        self.is_press      = False
         self.has_anno      = False
         self.label_counter = 0
         # Setup timer
@@ -34,6 +35,7 @@ class Player(QWidget):
         self.init_UI()
         self.init_runtime()
         self.init_data()
+        self.setFocus(True)
 
     def init_data(self):
         self.paths = ls_files()
@@ -79,17 +81,17 @@ class Player(QWidget):
     def init_UI(self):
         # init components
         self.frame     = VTFrame()
-        self.playback  = Playback()
+        self.playback  = VTPlayback()
 
         self.texts     = dict(wd       = DnDLineEdit())
         self.groups    = dict(display  = QGroupBox("Display Mode"),
                               anno     = QGroupBox("Annotations"))
-
         self.labels    = dict(frame    = QLabel("Frame: %d" % self.i_frame),
                               fps      = QLabel("Frame per second (FPS): %d" %
                                                 int(self.fps * 1000)),
                               wd       = QLabel("Data directory"),
-                              alpha    = QLabel("Opacity: %d / 255" % self.alpha))
+                              alpha    = QLabel("Opacity: %d / 255" % self.alpha),
+                              describe = QLabel("Press Space to play/pause"))
         self.buttons   = dict(wd       = QPushButton("Browse"),
                               play     = QPushButton(""),
                               next     = QPushButton(""),
@@ -254,7 +256,6 @@ class Player(QWidget):
         layout_grp_display.addWidget(self.toggles["edges"])
         layout_grp_display.addWidget(self.toggles["cls"])
         layout_grp_display.addWidget(self.toggles["pre"])
-        print('set dis')
         self.groups["display"].setLayout(layout_grp_display)
 
         self.groups["anno"] = QGroupBox("Annotations")
@@ -266,7 +267,6 @@ class Player(QWidget):
         layout_grp_ann.addWidget(self.groups["display"], 2, 0, 2, 1)
         layout_grp_ann.addWidget(self.check["lbs"],      2, 1)
         layout_grp_ann.addWidget(self.check["contours"], 3, 1)
-        print('set anoo')
         self.groups["anno"].setLayout(layout_grp_ann)
 
         layout_config = QGridLayout(self)
@@ -276,18 +276,18 @@ class Player(QWidget):
         layout_config.addWidget(self.labels["fps"], 2, 0, 1, 4, alignment=Qt.AlignBottom)
         layout_config.addWidget(self.sliders["fps"], 3, 0, 1, 4, alignment=Qt.AlignTop)
         layout_config.addWidget(self.groups["anno"], 4, 0, 1, 4)
-        print('set config')
         self.config.setLayout(layout_config)
 
         # layout main
         layout = QGridLayout(self)
         layout.addWidget(self.frame,  0, 0, 1, 4, alignment=Qt.AlignCenter)
         layout.addWidget(self.tabs,   0, 4, 1, 2, alignment=Qt.AlignCenter)
-        layout.addWidget(self.labels["frame"], 1, 0, 1, 3)
-        layout.addWidget(self.buttons["prev"], 2, 0)
-        layout.addWidget(self.buttons["play"], 2, 1)
-        layout.addWidget(self.buttons["next"], 2, 2)
-        layout.addWidget(self.playback,  1, 3, 2, 1)
+        layout.addWidget(self.buttons["prev"], 1, 0)
+        layout.addWidget(self.buttons["play"], 1, 1)
+        layout.addWidget(self.buttons["next"], 1, 2)
+        layout.addWidget(self.playback,  1, 3)
+        layout.addWidget(self.labels["frame"], 2, 0, 1, 3)
+        layout.addWidget(self.labels["describe"], 2, 3)
         layout.addWidget(self.buttons["run"],  1, 4, 2, 1)
         layout.addWidget(self.buttons["save"], 1, 5, 2, 1)
         self.setLayout(layout)
@@ -338,21 +338,25 @@ class Player(QWidget):
         if self.i_frame == self.n_frame:
             self.change_status(to_play=False)
             self.i_frame = 0
+        self.playback.set_frame_tmp(self.i_frame)
         self.update_frames()
 
     def prev_frames(self):
         self.i_frame -= 1
+        self.playback.set_frame_tmp(self.i_frame)
         self.update_frames()
 
     def update_frames(self):
         i = self.i_frame
-        self.labels["frame"].setText("Frame: %d" % i)
+        self.labels["frame"].setText("Frame: %d / %d" % (i, self.n_frame))
         self.frame.setPixmap(QPixmap(self.paths[i]))
+        # set cursor in the playback
         self.playback.set_frame(self.i_frame)
-        # show labels from the displayed frames
+        # if is playing, update tmp frame in the playback
+        if self.is_play:
+            self.playback.set_frame_tmp(self.i_frame)
 
-        print("number of show: %d" % len(self.imgs_show))
-        print("n_frame: %d" % self.n_frame)
+        # show labels from the displayed frames
         if self.has_anno:
             self.frame.set_predict(self.imgs_show[i])
             self.set_plot()
@@ -389,6 +393,7 @@ class Player(QWidget):
             self.timer.stop()
 
     def mousePressEvent(self, evt):
+        self.is_press = True
         self.update_globalrec()
         if self.globalrec["frame"].contains(evt.pos()):
             # collect info
@@ -415,18 +420,35 @@ class Player(QWidget):
                 self.update_frames()
 
         elif self.globalrec["play"].contains(evt.pos()):
-            self.change_status(not self.is_play)
+            self.playback.set_frame_tmp(self.i_frame)
+            if self.is_play:
+                x_mouse = evt.pos().x()
+                self.i_frame = self.x_to_frame(x_mouse)
+            self.update_frames()
+
+    def mouseReleaseEvent(self, evt):
+        self.is_press = False
 
     def mouseMoveEvent(self, evt):
         self.update_globalrec()
         if self.globalrec["play"].contains(evt.pos()):
-            x_mouse = evt.pos().x()
-            x_play  = self.playback.mapToParent(QPoint(0, 0)).x()
-            frame   = int((x_mouse - x_play) // self.playback.bin)
-            if frame > (self.n_frame - 1):
-                frame = self.n_frame - 1
-            self.i_frame = frame
+            if (not self.is_play) or (self.is_play & self.is_press):
+                x_mouse = evt.pos().x()
+                self.i_frame = self.x_to_frame(x_mouse)
+        else:
+            self.i_frame = self.playback.i_frame_tmp
         self.update_frames()
+
+    def keyPressEvent(self, evt):
+        if evt.key() == Qt.Key_Space:
+            self.change_status(not self.is_play)
+
+    def x_to_frame(self, x):
+        x_play = self.playback.mapToParent(QPoint(0, 0)).x()
+        frame = int((x - x_play) // self.playback.bin)
+        if frame > (self.n_frame - 1):
+            frame = self.n_frame - 1
+        return frame
 
 # Note
 # self.thread = QThread(self)

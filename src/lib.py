@@ -297,6 +297,7 @@ def do_k_means(imgs, pos_yx, i, k):
         if (len(block_sp) == 0) or (len(block_tp) == 0):
             continue
         else:
+            # --- VERSION 1
             # extract features from blocks
             ft_tp = extract_features(block_tp, conv_type="temporal")
             ft_sp = extract_features(block_sp, conv_type="spatial")
@@ -304,6 +305,9 @@ def do_k_means(imgs, pos_yx, i, k):
             n_conv = len(ft_tp) + len(ft_sp)
             ft_yx = list(pos_yx[j]) * (n_conv // 2) # make yx same length as conv
             dt_features[j] = np.concatenate([ft_tp, ft_sp, ft_yx])
+            # --- VERSION 2
+            # dt_features[j] = list(pos_yx[j]) * 12
+
     # remove out-of-boundary entry
     idx_keep = np.sum(dt_features, axis=1) != 0
     dt_features = dt_features[idx_keep]
@@ -460,13 +464,17 @@ def map_features_to_id(features, k, use_pca=False):
         return new_ids, fake_pcs
 
     else:
-        #-- Get PCs from features, and cluster into k+1 groups
-        pca = PCA(2)
-        pca.fit(features) 
-        # pcs = pca.transform(features) * pca.explained_variance_ratio_
-        pcs = pca.transform(features)
-        # ids, _ = cv_k_means(pcs, k)
-        ids = cluster_gm(pcs, k)
+        # PCA clustering -----=-----
+        # #-- Get PCs from features, and cluster into k+1 groups
+        # pca = PCA(2)
+        # pca.fit(features) 
+        # # pcs = pca.transform(features) * pca.explained_variance_ratio_
+        # pcs = pca.transform(features)
+        # # ids, _ = cv_k_means(pcs, k)
+        # ids = cluster_gm(pcs, k)
+        # All clustering -----=-----
+        ids = cluster_gm(features, k)
+        pcs = np.zeros((len(features), 2))
 
         # return
         return ids + 1, pcs

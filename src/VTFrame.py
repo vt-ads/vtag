@@ -118,7 +118,6 @@ def getIdx8QImg(img, k, alpha=200):  # k=20
     nc = len(colormap) - 1  # exclude 0: background color
 
     # background color
-    # qImg.setColor(0, colormap[0].rgba())
     qImg.setColor(0, QColor(0, 0, 0, alpha).rgba())
     # cluster color
     for i in range(k):

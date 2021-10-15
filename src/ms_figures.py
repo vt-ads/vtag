@@ -1,6 +1,6 @@
 from pyqtgraph.Qt import scale
 from lib import *
-from Tags import VTags
+from VTags import VTags
 # Input
 dataname = "group"
 # WD
@@ -17,6 +17,55 @@ features = app.OUTS["features"]
 # figure: feature map --- --- --- --- --- --- --- --- --- --- --- ---
 i = 157
 plt.imshow(features[i])
+
+# figure: error strategies--- --- --- --- --- --- --- --- --- --- --- ---
+def PolyArea(x, y):
+    return 0.5*np.abs(np.dot(x, np.roll(y, 1))-np.dot(y, np.roll(x, 1)))
+
+def cal_error(obs, pre):
+    errors = []
+    _, k = obs.shape
+    for i in range(int(k / 2)):
+        errors += [((pre[:, (i * 2) + 0] - obs[:, (i * 2) + 0])**2 +
+                    (pre[:, (i * 2) + 1] - obs[:, (i * 2) + 1])**2) ** .5]
+    return np.mean(errors, axis=0)
+
+
+# get label from group data (swap 173-211)
+os.chdir(path_project + "group")
+pre_grp_J = np.array(pd.read_csv("labels_J1_adj.csv"))
+pre_grp_F = np.array(pd.read_csv("labels.csv"))
+obs_grp = np.array(pd.read_csv("truth/labels_1.csv"))
+
+# compute the largest error
+# plt.scatter(x, y)
+bound = app.ARGS["bounds"]
+x = bound[:, 0]
+y = bound[:, 1]
+base = distance([90, 730], [440, 170])
+
+fig, axes = plt.subplots(figsize=(8, 4))
+error_grpJ = (cal_error(obs_grp, pre_grp_J) / base)[2:-1]
+error_grpF = (cal_error(obs_grp, pre_grp_F) / base)[2:-1]
+
+axes.plot(error_grpJ, linewidth=2, alpha=.7)
+axes.plot(error_grpF, linewidth=2, alpha=.7)
+axes.yaxis.grid(True)
+axes.set_xlabel('Time Frames')
+axes.set_ylabel('Standardized Error')
+
+fig, axes = plt.subplots(figsize=(5, 4))
+plot_lbs = ["James", "FangYi"]
+facecolor = ['#1f77b4', '#ff7f03', '#2ca02c']
+axes.yaxis.grid(True)
+axes.set_ylabel('Standardized Error')
+plot = axes.boxplot([error_grpJ, error_grpF],
+                    notch=True,
+                    vert=True,  # vertical box alignment
+                    patch_artist=True,  # fill with color
+                    labels=plot_lbs)
+for patch, color in zip(plot["boxes"], facecolor):
+    patch.set_facecolor(color)
 
 
 # figure: error --- --- --- --- --- --- --- --- --- --- --- ---
