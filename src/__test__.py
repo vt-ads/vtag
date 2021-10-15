@@ -4,7 +4,7 @@ from VTags import VTags
 
 # Input
 # dataname = "one_pig"
-dataname = "group"
+dataname = "group_small"
 
 # WD
 path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/"
@@ -47,7 +47,7 @@ from lib import *
 from VTags import VTags
 
 # Input
-dataname = "group"
+dataname = "group_small"
 
 # WD
 path_project = "/Users/jchen/Dropbox/projects/Virtual_Tags/data/"
@@ -60,7 +60,7 @@ bounds = np.array([[y, x] for x, y in zip(bound_x, bound_y)])
 s = "new_F"
 app = VTags(k=2, n_tags=20)
 app.load(bounds=bounds)
-app.detect_movements()
+app.detect_movements(n_ticks=2)
 app.detect_edges()
 
 # plt.imshow(app.IMGS["edg"][119])
@@ -98,22 +98,8 @@ app.create_labels()
 pred = app.IMGS["pred"]
 lbs = app.OUTS["pred_labels"]
 
-
 clts = make_labels(pred)
 n, k, _ = clts.shape
-
-# 123, 124
-test = lbs[123:126]
-test.shape
-plt.plot(test[:, 0, 0], test[:, 0, 1])
-plt.plot(test[:, 1, 0], test[:, 1, 1])
- 
-test2 = test.copy()
-tmp = test2[0, 0].copy()
-test2[0, 0] = test2[0, 1].copy()
-test2[0, 1] = tmp
-plt.plot(test2[:, 0, 0], test2[:, 0, 1])
-plt.plot(test2[:, 1, 0], test2[:, 1, 1])
 
 cts     = np.mean(clts, axis=1)
 cts_new = np.array([cts] * k).swapaxes(0, 1)
@@ -123,12 +109,24 @@ diff = vec[1:] - vec[:-1]
 sig = np.abs(np.mean(diff[:, 0], axis=1))
 np.where(sig > 20)
 
-plt.plot(sig)
-vec[39:42]
+# plt.plot(sig)
+# # 123, 124
+# test = lbs[123:126]
+# test.shape
+# plt.plot(test[:, 0, 0], test[:, 0, 1])
+# plt.plot(test[:, 1, 0], test[:, 1, 1])
+ 
+# test2 = test.copy()
+# tmp = test2[0, 0].copy()
+# test2[0, 0] = test2[0, 1].copy()
+# test2[0, 1] = tmp
+# plt.plot(test2[:, 0, 0], test2[:, 0, 1])
+# plt.plot(test2[:, 1, 0], test2[:, 1, 1])
 
+# vec[39:42]
 
-app.save_labels(file="labels_%s.csv" % s)
-app.save(h5="model_%s.h5" % s)
+app.save_labels(file="labels.csv")
+app.save(h5="model.h5")
 
 ### --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
 # generate features

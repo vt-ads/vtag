@@ -91,7 +91,7 @@ class VTags():
         self.make_predictions()
         self.create_labels()
 
-    def detect_movements(self):
+    def detect_movements(self, n_ticks=3):
         '''
         '''
         imgs_mov = self.IMGS["mov"]
@@ -107,7 +107,7 @@ class VTags():
         # remove na frames
         nonna_frames = imgs_mov_tmp[~np.isnan(imgs_mov_tmp).max(axis=(1, 2))]
         tick   = np.std(nonna_frames)
-        cutoff = np.median(nonna_frames) + (3 * tick)
+        cutoff = np.median(nonna_frames) + (n_ticks * tick)
         for i in range(n):
             imgs_mov[i] = get_binary(imgs_mov_tmp[i], cutabs=cutoff)
 
@@ -123,7 +123,7 @@ class VTags():
                 img_tmp = get_binary(imgs_mov_tmp[i], cutabs=cutoff - adjust)
             imgs_mov[i] = img_tmp
 
-    def detect_edges(self, n_denoise=3, strategy="J1"):
+    def detect_edges(self, n_denoise=5, strategy="J1"):
         '''
         '''
         imgs_mov = self.IMGS["mov"]

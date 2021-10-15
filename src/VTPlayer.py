@@ -36,6 +36,7 @@ class VTPlayer(QWidget):
         self.init_runtime()
         self.init_data()
         self.setFocus(True)
+        self.setFocusPolicy(Qt.StrongFocus)
 
     def init_data(self):
         self.paths = ls_files()
@@ -57,7 +58,7 @@ class VTPlayer(QWidget):
         self.update_frames()
 
     def init_args(self, # default arguments
-                        dataname="group",
+                        dataname="group_small",
                         fps=10/1000):
         # extract args
         args = self.args
@@ -91,7 +92,7 @@ class VTPlayer(QWidget):
                                                 int(self.fps * 1000)),
                               wd       = QLabel("Data directory"),
                               alpha    = QLabel("Opacity: %d / 255" % self.alpha),
-                              describe = QLabel("Press Space to play/pause"))
+                              describe = QLabel("Press 'Space' to play/pause. 'Arrow right/left' to the next/previous frame." ))
         self.buttons   = dict(wd       = QPushButton("Browse"),
                               play     = QPushButton(""),
                               next     = QPushButton(""),
@@ -442,6 +443,10 @@ class VTPlayer(QWidget):
     def keyPressEvent(self, evt):
         if evt.key() == Qt.Key_Space:
             self.change_status(not self.is_play)
+        elif evt.key() == Qt.Key_Right:
+            self.next_frames()
+        elif evt.key() == Qt.Key_Left:
+            self.prev_frames()
 
     def x_to_frame(self, x):
         x_play = self.playback.mapToParent(QPoint(0, 0)).x()
