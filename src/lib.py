@@ -127,35 +127,81 @@ def lb_from_pd_to_np(labels):
     return np.array(labels).reshape((n, -1, 2))
 
 
-def sort_clusters(clusters_inputs, imgs):
-    clusters = clusters_inputs.copy()
+# ARCHIVE
+# def sort_clusters(clusters_inputs, imgs):
+#     clusters = clusters_inputs.copy()
+#     n_frames, k, _ = clusters.shape
+#     for i in range(n_frames - 1):  # the last frame is not applicable
+#         img = imgs[i + 1]
+#         # 0-0, 0-1, 0-2, 1-0, 1-1
+#         for k1 in range(0, k - 1):
+#             ls_dist = []
+
+#             for k2 in range(k1, k):
+#                 ls_dist += [distance(clusters[i][k1],
+#                                      clusters[i + 1][k2])]
+#             # find min idx
+#             idx_min = np.where(ls_dist == np.min(ls_dist))[0][0] + k1
+
+#             # swap centers at i+1
+#             tmp = clusters[i + 1][k1].copy()
+#             clusters[i + 1][k1] = clusters[i + 1][idx_min]
+#             clusters[i + 1][idx_min] = tmp
+
+#             # swap image values
+#             value_min = idx_min + 1  # 0 -> 1, 1 -> 2
+#             value_k1  = k1 + 1
+#             img[img == value_min] = 9
+#             img[img == value_k1]  = value_min
+#             img[img == 9]        = value_k1
+#     return clusters
+
+def sort_clusters(clusters, imgs):
     n_frames, k, _ = clusters.shape
-    for i in range(n_frames - 1):  # the last frame is not applicable
-        img = imgs[i + 1]
-        # 0-0, 0-1, 0-2, 1-0, 1-1
+
+    for i in range(n_frames):
+        img          = imgs[i]
+        score_ori    = get_scores(clusters, i)
+        clusters_alt = clusters.copy()
+
         for k1 in range(0, k - 1):
-            ls_dist = []
-
             for k2 in range(k1, k):
-                ls_dist += [distance(clusters[i][k1],
-                                     clusters[i + 1][k2])]
-            # find min idx
-            idx_min = np.where(ls_dist == np.min(ls_dist))[0][0] + k1
+                clusters_alt[i] = swap_clusters(clusters[i], swp1=k1, swp2=k2)
+                score_alt = get_scores(clusters_alt, i)
 
-            # swap centers at i+1
-            tmp = clusters[i + 1][k1].copy()
-            clusters[i + 1][k1] = clusters[i + 1][idx_min]
-            clusters[i + 1][idx_min] = tmp
-
-            # swap image values
-            value_min = idx_min + 1  # 0 -> 1, 1 -> 2
-            value_k1  = k1 + 1
-            img[img == value_min] = 9
-            img[img == value_k1]  = value_min
-            img[img == 9]        = value_k1
-
+                if score_alt > score_ori:
+                    clusters  = clusters_alt.copy()
+                    score_ori = score_alt
+                    # update images
+                    img[img == (k1 + 1)] = 9
+                    img[img == (k2 + 1)] = k1 + 1
+                    img[img == 9]        = k2 + 1
     return clusters
 
+
+def get_scores(clts, n, weight=.7):
+    try:
+        vec_ori = clts[(n - 1): (n + 1)] - clts[(n - 2): n]
+        # change of position
+        vec = vec_ori[-1]
+        # change of direction
+        dvec = vec_ori[1] - vec_ori[0]
+        # output
+        return -(euclidean(vec) + weight * euclidean(dvec))
+    except:
+        return 0
+
+
+def euclidean(pts):
+    return sum(np.sum(pts ** 2, axis=1) ** .5)
+
+
+def swap_clusters(clusters, swp1=0, swp2=1):
+    clusters_out = clusters.copy()
+    tmp                = clusters_out[swp1].copy()
+    clusters_out[swp1] = clusters_out[swp2].copy()
+    clusters_out[swp2] = tmp
+    return clusters_out
 
 # === === === === === === === QT === === === === === === ===
 

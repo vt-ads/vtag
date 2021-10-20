@@ -2,84 +2,83 @@ from lib import *
 
 class VTags():
 
-    def __init__(self, k=1, n_tags=10):
-        self.ARGS = dict(
-                        n      = -1,
-                        w      = -1,
-                        h      = -1,
-                        c      = -1,
-                        n_id   = k,
-                        n_tags = n_tags,
-                        k      = k * n_tags,
-                        bounds = [],
-        )
-        # all IMGS is (n, h, w, -1)
-        self.IMGS = dict(
-                        rgb = None,
-                        bw  = None,
-                        mov = None,
-                        edg = None,
-                        pred= None,
-        )
-        self.OUTS = dict(
-                        features = None, # (y, x) coordinate of centers of each k
-                        pos_yx  = None,  # (y, x) coordinate of edges
-                        k_to_id = None,
-                        pcs = None,
-                        pred_cls = None,
-                        pred_labels = None,
-                        labels = None,
-                        # not used
-                        cls = None   # clusters
-        )
-
-    def load(self, path=".", h5=None, n=-1, bounds=[]):
-        if h5 is not None:
+    def __init__(self, k=1, n_tags=10, h5=None):
+        if h5 is None:
+            self.ARGS = dict(
+                            n      = -1,
+                            w      = -1,
+                            h      = -1,
+                            c      = -1,
+                            n_id   = k,
+                            n_tags = n_tags,
+                            k      = k * n_tags,
+                            bounds = [],
+            )
+            # all IMGS is (n, h, w, -1)
+            self.IMGS = dict(
+                            rgb = None,
+                            bw  = None,
+                            mov = None,
+                            edg = None,
+                            pred= None,
+            )
+            self.OUTS = dict(
+                            features = None, # (y, x) coordinate of centers of each k
+                            pos_yx   = None,  # (y, x) coordinate of edges
+                            k_to_id  = None,
+                            pcs = None,
+                            pred_cls    = None,
+                            pred_labels = None,
+                            labels = None,
+                            # not used
+                            cls    = None   # clusters
+            )
+        else:
             self.ARGS, self.IMGS, self.OUTS = pickle.load(open(h5, "rb"))
 
+    def load(self, path=".", n=-1, bounds=[]):
+        # list files
+        ls_imgs = os.listdir(path)
+        ls_imgs.sort()
+        files   = [f for f in ls_imgs if ".png" in f]
+
+        # check dimensions
+        h, w, c = cv.imread(files[0]).shape
+
+        # create np matrix
+        if n == -1:
+            n = len(files)
+        imgs_rgb = np.zeros((n, h, w, c), dtype=np.uint8)
+
+        # iterate through files
+        for i in range(n):
+            imgs_rgb[i] = cv.imread(files[i])
+
+        # update contents
+        self.ARGS["n"] = n
+        self.ARGS["h"] = h
+        self.ARGS["w"] = w
+        self.ARGS["c"] = c
+        if len(bounds) == 0:
+            # [y, x]
+            self.ARGS["bounds"] = np.array([[0, 0], [0, w], [h, w], [h, 0]])
         else:
-            # list files
-            ls_imgs = os.listdir(path)
-            ls_imgs.sort()
-            files   = [f for f in ls_imgs if ".png" in f]
+            self.ARGS["bounds"] = np.array(bounds)
 
-            # check dimensions
-            h, w, c = cv.imread(files[0]).shape
+        self.IMGS["rgb"]      = imgs_rgb
+        self.IMGS["bw"]       = imgs_rgb.sum(axis=3)
+        self.IMGS["mov"]      = np.zeros((n, h, w), dtype=np.float32)
+        self.IMGS["edg"]      = np.zeros((n, h, w), dtype=np.uint8)
+        self.IMGS["pred"]     = np.zeros((n, h, w), dtype=np.uint8)
+        self.IMGS["pred_cls"] = np.zeros((n, h, w), dtype=np.uint8)
 
-            # create np matrix
-            if n == -1:
-                n = len(files)
-            imgs_rgb = np.zeros((n, h, w, c), dtype=np.uint8)
-
-            # iterate through files
-            for i in range(n):
-                imgs_rgb[i] = cv.imread(files[i])
-
-            # update contents
-            self.ARGS["n"] = n
-            self.ARGS["h"] = h
-            self.ARGS["w"] = w
-            self.ARGS["c"] = c
-            if len(bounds) == 0:
-                # [y, x]
-                self.ARGS["bounds"] = np.array([[0, 0], [0, w], [h, w], [h, 0]])
-            else:
-                self.ARGS["bounds"] = np.array(bounds)
-
-            self.IMGS["rgb"]      = imgs_rgb
-            self.IMGS["bw"]       = imgs_rgb.sum(axis=3)
-            self.IMGS["mov"]      = np.zeros((n, h, w), dtype=np.float32)
-            self.IMGS["edg"]      = np.zeros((n, h, w), dtype=np.uint8)
-            self.IMGS["pred"]     = np.zeros((n, h, w), dtype=np.uint8)
-            self.IMGS["pred_cls"] = np.zeros((n, h, w), dtype=np.uint8)
-
-            self.OUTS["pos_yx"]      = n * [None]
-            self.OUTS["features"]    = np.zeros((n, self.ARGS["k"], 24))
-            self.OUTS["k_to_id"]     = np.zeros((n, self.ARGS["k"]))
-            self.OUTS["pcs"]         = np.zeros((n, self.ARGS["k"], 2))
-            self.OUTS["pred_labels"] = np.zeros((n, self.ARGS["n_id"], 2), dtype=np.int)
-            # not used
-            self.OUTS["cls"]         = n * [None]
+        self.OUTS["pos_yx"]      = n * [None]
+        self.OUTS["features"]    = np.zeros((n, self.ARGS["k"], 24))
+        self.OUTS["k_to_id"]     = np.zeros((n, self.ARGS["k"]))
+        self.OUTS["pcs"]         = np.zeros((n, self.ARGS["k"], 2))
+        self.OUTS["pred_labels"] = np.zeros((n, self.ARGS["n_id"], 2), dtype=np.int)
+        # not used
+        self.OUTS["cls"]         = n * [None]
 
         self.OUTS["labels"] = load_labels(self.ARGS["n"], self.ARGS["n_id"])
 
@@ -113,11 +112,11 @@ class VTags():
 
         # rescue low-signal frame
         nsig_frames = np.array([np.count_nonzero(img) for img in imgs_mov])
-        cut_rescue = np.quantile(nsig_frames, .3)
-        idx_rescue = np.where((nsig_frames < cut_rescue) & (nsig_frames > 0))[0]
+        cut_rescue  = np.quantile(nsig_frames, .3)
+        idx_rescue  = np.where((nsig_frames < cut_rescue) & (nsig_frames > 0))[0]
         for i in idx_rescue:
             img_tmp = imgs_mov[i]
-            adjust = 0
+            adjust  = 0
             while np.count_nonzero(img_tmp) <= cut_rescue:
                 adjust += (tick * 0.2)
                 img_tmp = get_binary(imgs_mov_tmp[i], cutabs=cutoff - adjust)
@@ -244,7 +243,7 @@ class VTags():
 
     def save_labels(self, file="labels.csv"):
         labels = self.OUTS["pred_labels"]
-        n_ids = self.ARGS["n_id"]
+        n_ids  = self.ARGS["n_id"]
         save_labels(labels, n_ids, file)
 
 
