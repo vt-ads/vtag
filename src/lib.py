@@ -343,15 +343,15 @@ def do_k_means(imgs, pos_yx, i, k):
             continue
         else:
             # --- VERSION 1
-            # # extract features from blocks
-            # ft_tp = extract_features(block_tp, conv_type="temporal")
-            # ft_sp = extract_features(block_sp, conv_type="spatial")
-            # # concatenate features
-            # n_conv = len(ft_tp) + len(ft_sp)
-            # ft_yx = list(pos_yx[j]) * (n_conv // 2) # make yx same length as conv
-            # dt_features[j] = np.concatenate([ft_tp, ft_sp, ft_yx])
+            # extract features from blocks
+            ft_tp = extract_features(block_tp, conv_type="temporal")
+            ft_sp = extract_features(block_sp, conv_type="spatial")
+            # concatenate features
+            n_conv = len(ft_tp) + len(ft_sp)
+            ft_yx = list(pos_yx[j]) * (n_conv // 2) # make yx same length as conv
+            dt_features[j] = np.concatenate([ft_tp, ft_sp, ft_yx])
             # --- VERSION 2
-            dt_features[j] = list(pos_yx[j]) * 12
+            # dt_features[j] = list(pos_yx[j]) * 12
 
     # remove out-of-boundary entry
     idx_keep = np.sum(dt_features, axis=1) != 0
@@ -362,7 +362,7 @@ def do_k_means(imgs, pos_yx, i, k):
     # run k-mean by openCV
     if (len(dt_features) >= k):
         clusters, _ = cv_k_means(yx, k)
-        centers = np.zeros((k, feature_length))
+        centers     = np.zeros((k, feature_length))
         for i in range(k):
             centers[i] = np.mean(dt_features[clusters == i], axis=0)
 
@@ -515,8 +515,8 @@ def map_features_to_id(features, k, use_pca=False):
         pca.fit(features) 
         # pcs = pca.transform(features) * pca.explained_variance_ratio_
         pcs = pca.transform(features)
-        # ids, _ = cv_k_means(pcs, k)
-        ids = cluster_gm(pcs, k)
+        ids, _ = cv_k_means(pcs, k)
+        # ids = cluster_gm(pcs, k)
         # All clustering -----=-----
         # ids = cluster_gm(features, k)
         # pcs = np.zeros((len(features), 2))

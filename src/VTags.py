@@ -90,7 +90,7 @@ class VTags():
         self.make_predictions()
         self.create_labels()
 
-    def detect_movements(self, n_ticks=3):
+    def detect_movements(self, n_ticks=3, n_blend=1):
         '''
         '''
         imgs_mov = self.IMGS["mov"]
@@ -122,7 +122,18 @@ class VTags():
                 img_tmp = get_binary(imgs_mov_tmp[i], cutabs=cutoff - adjust)
             imgs_mov[i] = img_tmp
 
-    def detect_edges(self, n_denoise=5, strategy="J1"):
+        # Persistence of vision
+        for i in range(n_blend):
+            idx = i + 1
+            imgs_mov[:-idx] += (imgs_mov[idx:] > 0)
+            imgs_mov[idx:]  += (imgs_mov[:-idx] > 0)
+        max_value = n_blend * 2 + 1
+        imgs_mov  = imgs_mov / max_value
+        cut       = max_value * 0.5
+        imgs_mov  = get_binary(imgs_mov, cutabs=cut)
+
+
+    def detect_edges(self, n_denoise=10):
         '''
         '''
         imgs_mov = self.IMGS["mov"]
@@ -143,6 +154,14 @@ class VTags():
             dtype='int') / 29
 
         for i in range(n):
+            # # Strategy I
+            # conv = convolve2d(imgs_mov[i], k_edge, mode="same")
+            # conv = get_binary(conv)
+            # for _ in range(n_denoise):
+            #     conv = convolve2d(conv, k_gauss, mode="same")
+            #     conv = get_binary(conv, cutabs=.5)
+
+            # Strategy II
             conv = convolve2d(imgs_mov[i], k_gauss, mode="same")
             for _ in range(n_denoise):
                 conv = convolve2d(conv, k_gauss, mode="same")
@@ -155,21 +174,6 @@ class VTags():
             # find pos of edges and filter edges by safe area (boundary)
             pos_yx_tmp = find_nonzeros(imgs_edg[i])
             pos_yx[i]  = filter_edges(pos_yx_tmp, bounds)
-
-        # elif strategy == "F1":
-        #     for i in range(n):
-        #         conv = convolve2d(imgs_mov[i], k_gauss, mode="same")
-        #         for _ in range(n_denoise):
-        #             conv = convolve2d(conv, k_gauss, mode="same")
-        #         conv = get_binary(conv, cutabs=.5)
-        #         conv = convolve2d(conv, k_edge, mode="same")
-        #         conv = get_binary(conv, cutabs=.5)
-        #         imgs_edg[i] = conv
-        #         # create fake signals to avoid empty array error
-        #         imgs_edg[i, 5:10, 5:10] = 1
-        #         # find pos of edges and filter edges by safe area (boundary)
-        #         pos_yx_tmp = find_nonzeros(imgs_edg[i])
-        #         pos_yx[i]  = filter_edges(pos_yx_tmp, bounds)
 
     def detect_clusters(self):
         '''
@@ -208,6 +212,7 @@ class VTags():
         '''
         '''
         n        = self.ARGS["n"]
+        k        = self.ARGS["n_id"]
         clts     = self.OUTS["cls"]
         pos_yx   = self.OUTS["pos_yx"]
         k_to_id  = self.OUTS["k_to_id"]
@@ -225,6 +230,24 @@ class VTags():
 
                 # show clusters
                 pred_clt[i][pts[:, 0], pts[:, 1]] = clt + 1 # cluster from 1 to k
+
+        # refine predictions
+        # n, h, w = pred.shape
+        # n_blend = 2
+        # max_value = n_blend + 1
+        # new_pred = np.zeros((n, h, w, k))
+        # for i in range(k):
+        #     new_pred[pred == (i + 1), i] = 1
+        #     for j in range(n_blend):
+        #         idx = j + 1
+        #         # new_pred[:-idx, :, :, i] += new_pred[idx:, :, :, i]
+        #         new_pred[idx:, :, :, i] += (new_pred[:-idx, :, :, i] > 0)
+        #     new_pred[:, :, :, i] = new_pred[:, :, :, i] / max_value
+        # # idx0 = np.sum(new_pred, axis=3) == 0
+        # idx1 = new_pred[:, :, :, 0] > new_pred[:, :, :, 1]
+        # idx2 = new_pred[:, :, :, 0] < new_pred[:, :, :, 1]
+        # pred[idx1] = 1
+        # pred[idx2] = 2
 
     def create_labels(self):
         pred     = self.IMGS["pred"]

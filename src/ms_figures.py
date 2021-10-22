@@ -1,6 +1,8 @@
 from pyqtgraph.Qt import scale
 from lib import *
 from VTags import VTags
+# NOTE 3.72% (0.32 feet) 8% (0.69 feet)
+# NOTE 0.08625 feet = 1%
 # Input
 dataname = "group"
 # WD
@@ -33,8 +35,8 @@ def cal_error(obs, pre):
 
 # get label from group data (swap 173-211)
 os.chdir(path_project + "group")
-pre_grp_J = np.array(pd.read_csv("labels_J1_adj.csv"))
-pre_grp_F = np.array(pd.read_csv("labels.csv"))
+pre_grp_J = np.array(pd.read_csv("labels_J_adj.csv"))
+pre_grp_F = np.array(pd.read_csv("labels_F_adj.csv"))
 obs_grp = np.array(pd.read_csv("truth/labels_1.csv"))
 
 # compute the largest error
@@ -72,11 +74,13 @@ for patch, color in zip(plot["boxes"], facecolor):
 def PolyArea(x, y):
     return 0.5*np.abs(np.dot(x, np.roll(y, 1))-np.dot(y, np.roll(x, 1)))
 
+
 def cal_error(obs, pre):
     errors = []
     _, k = obs.shape
-    for _ in range(int(k)):
-        errors += [((pre[:, 0] - obs[:, 0])**2 + (pre[:, 1] - obs[:, 1])**2) ** .5]
+    for i in range(int(k / 2)):
+        errors += [((pre[:, (i * 2) + 0] - obs[:, (i * 2) + 0])**2 +
+                    (pre[:, (i * 2) + 1] - obs[:, (i * 2) + 1])**2) ** .5]
     return np.mean(errors, axis=0)
 
 
