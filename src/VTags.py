@@ -267,31 +267,44 @@ class VTags():
             self.OUTS["k_to_id"][i], self.OUTS["pcs"][i] =\
                 map_features_to_id(features_all[i], k)
                 # features_all: n*k*24
-            # k_to_id: n * k
-            # pcs: n * k * 2 
+        # k_to_id: n * k
+        # pcs: n * k * 2 
 
     def make_predictions(self):
         '''
         '''
         n        = self.ARGS["n"]
+        # number of frames
         k        = self.ARGS["n_id"]
+        # number of animals
         clts     = self.OUTS["cls"]
+        # n*number of interesting pixels, the cluster label of each pixel
         pos_yx   = self.OUTS["pos_yx"]
+        # n*number of interesting pixels*2, the coordiantes of pixels
         k_to_id  = self.OUTS["k_to_id"]
+        # n*k, the animal label of each cluster
         pred     = self.IMGS["pred"]
+        # n*h*w zeros 
         pred_clt = self.IMGS["pred_cls"]
+        # n*h*w zeros 
 
         for i in range(n):
             if clts[i] is not None:
                 clt = clts[i]
+                # the cluster label each pixel is assigned to 
                 pts = pos_yx[i].astype(np.int)
 
                 # show prediction
                 which_id = k_to_id[i][clt]
+                # this maps every interesting pixel to animal
+                # has length of interesting pixels 
                 pred[i][pts[:, 0], pts[:, 1]] = which_id
+                # for the interesting pixels in the image (pred), fill in the pig id
 
                 # show clusters
                 pred_clt[i][pts[:, 0], pts[:, 1]] = clt + 1 # cluster from 1 to k
+                # for the interesting pixels in the image (pred_clt), 
+                # fill in the cluster id   
 
         # refine predictions
         # n, h, w = pred.shape
