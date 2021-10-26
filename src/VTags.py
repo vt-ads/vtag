@@ -326,7 +326,10 @@ class VTags():
 
     def create_labels(self):
         pred     = self.IMGS["pred"]
+        # n*h*w 
         clusters = make_labels(pred)
+        # n*number of animals*2 
+        # the median coordinates of pixels of the same animal 
         self.OUTS["pred_labels"] = sort_clusters(clusters, pred)
 
     def set_labels(self, i, x, y):

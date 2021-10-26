@@ -122,16 +122,24 @@ def load_labels(n_frames, k):
 
 
 def make_labels(imgs_p):
+    # imgs_p: n*h*w, animal label for interesting pixels
     n_frames = len(imgs_p)
+    # number of frames
     n_ids = np.max(imgs_p)
+    # number of animals
 
     labels = np.zeros((n_frames, n_ids, 2), dtype=np.int)
+    # n*number of animals*2
 
     for i in range(n_frames):
+        # for every frame
         for ki in range(n_ids):
+            # for every animal
             y, x = np.nonzero(imgs_p[i] == (ki + 1))
+            # the coordinates of pixels that are assigned to animals
             if (len(y) > 0) and (len(x) > 0):
                 labels[i, ki] = np.median(y), np.median(x)
+                # the median coordinates of pixels
     return labels
 
 
@@ -176,15 +184,20 @@ def lb_from_pd_to_np(labels):
 #     return clusters
 
 def sort_clusters(clusters, imgs):
+    # clusters: n*number of animals*2, location of predicated animals
+    # imgs: n*h*w
+    # the animal id for all of the interesting pixels in the image
     n_frames, k, _ = clusters.shape
 
     for i in range(n_frames):
+        # for every frame
         img          = imgs[i]
         score_ori    = get_scores(clusters, i)
         clusters_alt = clusters.copy()
 
         for k1 in range(0, k - 1):
             for k2 in range(k1, k):
+            # for every animal pair-wise comparison
                 clusters_alt[i] = swap_clusters(clusters[i], swp1=k1, swp2=k2)
                 score_alt = get_scores(clusters_alt, i)
 
@@ -196,15 +209,24 @@ def sort_clusters(clusters, imgs):
                     img[img == (k2 + 1)] = k1 + 1
                     img[img == 9]        = k2 + 1
     return clusters
+    # switch the animal label if they are flipped 
 
 
 def get_scores(clts, n, weight=.7):
+    # clts: n*number of animals*2, location of predicated animals 
+    # n: index of frame
     try:
         vec_ori = clts[(n - 1): (n + 1)] - clts[(n - 2): n]
+        # 2*number of animals*2
+
         # change of position
         vec = vec_ori[-1]
+        # number of animals*2
+
         # change of direction
-        dvec = vec_ori[1] - vec_ori[0]
+        dvec = vec_ori[1] - vec_ori[0] # ???
+        # number of animals*2
+
         # output
         return -(euclidean(vec) + weight * euclidean(dvec))
     except:
