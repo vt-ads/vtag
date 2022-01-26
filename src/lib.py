@@ -72,54 +72,81 @@ def get_binary(signals, cut=.5, cutabs=None, upbound=1):
     if cutabs is None:
         _, out = cv.threshold(signals, np.quantile(
             signals, cut), upbound, cv.THRESH_BINARY)
+        # set color to 1 if over 50 percentile
     else:
         _, out = cv.threshold(signals, cutabs, upbound, cv.THRESH_BINARY)
+        # set color to 1 if over cutabs 
     return out
 
 
 def detect_imgs(imgs, frame, span=1):
+    # imgs: black and white pictures, n*h*w
+    # frame: index of frame/picture
     i = frame
     j = span
     # stack 2*2 iamges: out_img is a 4-frame std image
     out_std = []
     for _ in range(2):
+    # iterate twice, 2 things in each iteration 
         out_std += [
             imgs[i:  (i+j+1)].std(axis=(0, )),
             imgs[(i-j):(i+1)].std(axis=(0, ))
         ]
         j += 1
+    # first iteration:
+    # sd of every pixel with itself in the next frame, and
+    # sd of every pixel with itself in the previous frame
+    # second iteration: 
+    # sd of every pixel with itself in the next two frames, and
+    # sd of every pixel with itself in the previous two frames
 
     out_img = sum(out_std) / len(out_std)
+    # average over the 4 things
     return out_img
+    # h*w
 
 
 def load_labels(n_frames, k):
     try:
         labels = pd.read_csv("labels.csv")
         labels = lb_from_pd_to_np(labels)
+    # see "lb_from_pd_to_np"
     except:
         labels = np.zeros((n_frames, k, 2), dtype=np.int)
+    # if there is no "labels.csv" in current directory
+    # create "labels" as n*k*2
+    # n: number of frames/pictures
+    # k: number of animals
 
     return labels
 
 
 def make_labels(imgs_p):
+    # imgs_p: n*h*w, animal label for interesting pixels
     n_frames = len(imgs_p)
+    # number of frames
     n_ids = np.max(imgs_p)
+    # number of animals
 
     labels = np.zeros((n_frames, n_ids, 2), dtype=np.int)
+    # n*number of animals*2
 
     for i in range(n_frames):
+        # for every frame
         for ki in range(n_ids):
+            # for every animal
             y, x = np.nonzero(imgs_p[i] == (ki + 1))
+            # the coordinates of pixels that are assigned to animals
             if (len(y) > 0) and (len(x) > 0):
                 labels[i, ki] = np.median(y), np.median(x)
+                # the median coordinates of pixels
     return labels
 
 
 def lb_from_np_to_pd(labels):
     n = len(labels)
     return np.array(labels).reshape((n, -1))
+    # change the input into a long vector with length n
 
 
 def lb_from_pd_to_np(labels):
@@ -157,15 +184,20 @@ def lb_from_pd_to_np(labels):
 #     return clusters
 
 def sort_clusters(clusters, imgs):
+    # clusters: n*number of animals*2, location of predicated animals
+    # imgs: n*h*w
+    # the animal id for all of the interesting pixels in the image
     n_frames, k, _ = clusters.shape
 
     for i in range(n_frames):
+        # for every frame
         img          = imgs[i]
         score_ori    = get_scores(clusters, i)
         clusters_alt = clusters.copy()
 
         for k1 in range(0, k - 1):
             for k2 in range(k1, k):
+            # for every animal pair-wise comparison
                 clusters_alt[i] = swap_clusters(clusters[i], swp1=k1, swp2=k2)
                 score_alt = get_scores(clusters_alt, i)
 
@@ -177,15 +209,24 @@ def sort_clusters(clusters, imgs):
                     img[img == (k2 + 1)] = k1 + 1
                     img[img == 9]        = k2 + 1
     return clusters
+    # switch the animal label if they are flipped 
 
 
 def get_scores(clts, n, weight=.7):
+    # clts: n*number of animals*2, location of predicated animals 
+    # n: index of frame
     try:
         vec_ori = clts[(n - 1): (n + 1)] - clts[(n - 2): n]
+        # 2*number of animals*2
+
         # change of position
         vec = vec_ori[-1]
+        # number of animals*2
+
         # change of direction
-        dvec = vec_ori[1] - vec_ori[0]
+        dvec = vec_ori[1] - vec_ori[0] # ???
+        # number of animals*2
+
         # output
         return -(euclidean(vec) + weight * euclidean(dvec))
     except:
@@ -270,11 +311,19 @@ def find_center(img):
 
 
 def find_nonzeros(img, is_values=False):
+    # img: h*w
     y, x = np.nonzero(img)
+    # coordiantes of non-zero pixels 
+    # length of x, y would be the number of non-zero pixels
     if is_values:
+    # if fales
         return np.array([[y[i], x[i], img[y[i], x[i]]] for i in range(len(x))])
+        # get locations and the numeric value of non-zero pixels
+        # return 3 values for each non-zero pixel
     else:
         return np.array([[y[i], x[i]] for i in range(len(x))])
+        # only get the locations of non-zero pixels
+        # return 2 values
 
 def get_k_centers(img, k):
     img_c = find_clusters(img, k)
@@ -320,6 +369,8 @@ def process_signals(signals, n_smth=5, cut_sd=2, burnin=16):
 
 
 def do_k_means(imgs, pos_yx, i, k):
+    # imgs: detected edges, n*h*w
+    # pos_yx: number of non-zero pixels * 3
     """
     imgs: series number of images (video)
     edges: points (y, x) of detected pixels
@@ -332,41 +383,82 @@ def do_k_means(imgs, pos_yx, i, k):
     feature_length = 24
     # pre-allocate data space
     dt_features = np.zeros((n, feature_length), dtype=np.int)
+    # n*24
+
     for j in range(n):
+    # for every non-zero pixel 
         # (y, x) coordinate
         pos_y, pos_x = pos_yx[j]
         # compute data cube for spatial or temporal analysis
         block_sp = make_block(imgs, i, (pos_y, pos_x), size=(3, 3))
         block_tp = make_block(imgs, i, (pos_y, pos_x), size=(2, 2, 2))
+        # imgs: detected edges, n*h*w
+        # for every non-zero pixel, 
+        # get 7*7 spacial and 
+        # 5*5*5 temporal block from it
+
         # if out of boundary, skip the rest steps
         if (len(block_sp) == 0) or (len(block_tp) == 0):
             continue
+        # if true, go to the next j,
+        # if false, go to else 
         else:
             # --- VERSION 1
             # extract features from blocks
             ft_tp = extract_features(block_tp, conv_type="temporal")
             ft_sp = extract_features(block_sp, conv_type="spatial")
+            # for every corner of the spacial/temperal block, 
+            # extract the local maxima 
+            # 2*2 (4 maxima) from spacial block
+            # 2*2*2 (8 maxima) from temporal block
+
             # concatenate features
             n_conv = len(ft_tp) + len(ft_sp)
-            ft_yx = list(pos_yx[j]) * (n_conv // 2) # make yx same length as conv
+            ft_yx = list(pos_yx[j]) * (n_conv // 2) 
+            # make yx same length as conv
+            # list(two elements) * 6, 12
+            # repeat the coordinates of pixels 6 times 
+
             dt_features[j] = np.concatenate([ft_tp, ft_sp, ft_yx])
+            # dt_features has 24 elements 
+            # for every pixel of interest within every frame,
+            # there are 24 elements of interest 
+            # first 12 of which are edges (gray-scale color),
+            # last 12 of which are 6 repeats of coordinates 
+
             # --- VERSION 2
             # dt_features[j] = list(pos_yx[j]) * 12
 
     # remove out-of-boundary entry
     idx_keep = np.sum(dt_features, axis=1) != 0
+    # summation of all 24 elements should be non-zero
+    # true and false with length number of non-zero pixels 
     dt_features = dt_features[idx_keep]
     yx = pos_yx[idx_keep]
     # scale features
     dt_features = scale2D(dt_features)
+    # standardize all pixel's 24 features
+
     # run k-mean by openCV
     if (len(dt_features) >= k):
+    # length of interesting pixels has to be larger than number of clusters 
         clusters, _ = cv_k_means(yx, k)
+        # yx: coordinates of interesting pixels
+        # k: number of clusters
+        # clusters: labels with length of interesting pixels
+        # for each pixel, a label of cluster is given
         centers     = np.zeros((k, feature_length))
+        # k * 24
         for i in range(k):
+        # for every cluster
             centers[i] = np.mean(dt_features[clusters == i], axis=0)
+            # averaging across the features for the detected edges and coordinates for each cluster
+            # this is different for the actual center from cv_k_means 
 
         return clusters, centers, yx  # last 2 are yx coordinates
+        # clusters: number of interesting pixels * 1 (label of cluster)
+        # centers: k*24 
+        # yx: number of interesting pixels * 2 (coordinates of interesting pixels)
     else:
         return -1
 
@@ -404,8 +496,11 @@ def cluster_by_structure(data, yx, k):
 
 
 def cv_k_means(data, k):
+    # data: coordinates of interesting pixels
+    # k: number of clusters
     data = data.astype(np.float32)
     criteria = (cv.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+    # criteria: (1, 10, 1)
     param_k = dict(data=data,
                    K=k,
                    bestLabels=None,
@@ -414,9 +509,19 @@ def cv_k_means(data, k):
                    flags=cv.KMEANS_PP_CENTERS)
 
     _, clusters, centers = cv.kmeans(**param_k)
+    # output is compactness, labels, centers
+    # compactness : the sum of squared distance from each point to their corresponding centers.
+    # 1 value
+    # labels : the label array 
+    # number of pixels * 1
+    # centers : array of centers of clusters.
+    # k * 2, 2 coordinates 
     clusters = clusters.reshape(-1)
+    # length is the number of pixels
+    # value is the label of cluster, 0, 1, ...
 
     return clusters, centers
+    # return label of each interesting pixel and center of clusters
 
 def distance(pt1, pt2, is_dir=False):
     direction = (pt1[0] - pt2[0], pt1[1] - pt2[1])
@@ -429,9 +534,13 @@ def distance(pt1, pt2, is_dir=False):
 
 
 def filter_edges(edgs, bounds):
+    # edges: number of non-zero pixels by 3
     paths = mpath.Path(bounds)
+    # draw lines
     idx_keep = paths.contains_points(edgs)
+    # for the non-zero pixels within bounds
     return edgs[idx_keep]
+    # return edges that are within bounds
 
 
 
@@ -447,11 +556,13 @@ def make_block(inputs, i, pos, size=(3, 3)):
         block = inputs[(i - bin_t): (i + bin_t + 1),
                        (pos_y - bin_y): (pos_y + bin_y + 1),
                        (pos_x - bin_x): (pos_x + bin_x + 1)]
+        # 5 * 5 * 5 block
     else:
         bin_y, bin_x = size
         block = inputs[i,
                        (pos_y - bin_y): (pos_y + bin_y + 1),
                        (pos_x - bin_x): (pos_x + bin_x + 1)]
+        # 7 * 7 block
     return block
 
 
@@ -476,6 +587,9 @@ def extract_features(block, conv_type="temporal"):
         block_con = convolve(block, kernel_t, mode='same')
         # max pooling
         block_pool = block_reduce(block_con, (3, 3, 3), np.max)
+        # for every 3 * 3 * 3 corner in temporal block, 
+        # calculate the max 
+        # output is 2 * 2 * 2 
 
     elif conv_type == "spatial":
         # define kernel
@@ -488,11 +602,15 @@ def extract_features(block, conv_type="temporal"):
         block_con = convolve(block, kernel_s, mode='same')
         # max pooling
         block_pool = block_reduce(block_con, (5, 5), np.max)
+        # for every 5*5 corner in spacial block, 
+        # calculate the max 
+        # output is 2 * 2 
 
     # flatten
     block_1d = block_pool.reshape((-1))
     # return
     return block_1d
+    # return 4 or 8 element vector
 
 
 def scale2D(data):
@@ -501,11 +619,15 @@ def scale2D(data):
     return (data - mean) / std
 
 def map_features_to_id(features, k, use_pca=False):
+    # features: k*24
     n_ft = len(features)
+    # k
     new_ids = np.array([0] * n_ft)
+    # 1*k
 
     if np.mean(features) == 0:
         fake_pcs = np.zeros((len(features), 2))
+        # k*2
         return new_ids, fake_pcs
 
     else:
@@ -513,8 +635,10 @@ def map_features_to_id(features, k, use_pca=False):
         #-- Get PCs from features, and cluster into k+1 groups
         pca = PCA(2)
         pca.fit(features) 
+        # features: k*24
         # pcs = pca.transform(features) * pca.explained_variance_ratio_
         pcs = pca.transform(features)
+        # pcs: k*2 
         ids, _ = cv_k_means(pcs, k)
         # ids = cluster_gm(pcs, k)
         # All clustering -----=-----
@@ -523,6 +647,8 @@ def map_features_to_id(features, k, use_pca=False):
 
         # return
         return ids + 1, pcs
+        # ids+1: labels for each k, 1,2,3,..., pig number, k elements
+        # pcs: 2 dimensional pc values 
 
 
 def reassign_id_by(old_ids, values=None, by="size"):
