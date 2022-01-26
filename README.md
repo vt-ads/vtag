@@ -1,3 +1,3 @@
-# Virtual_Tags
+# Virtual Tag (VTAG)
 ![](res/demo.gif)
 
