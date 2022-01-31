@@ -122,7 +122,6 @@ class VTags():
             imgs_mov_tmp[i] = detect_imgs(imgs_bw, i)
         # see "detect_imgs" in "lib"
         # n*h*w
-
         # binarize
         # remove na frames
         nonna_frames = imgs_mov_tmp[~np.isnan(imgs_mov_tmp).max(axis=(1, 2))]
@@ -141,7 +140,7 @@ class VTags():
         nsig_frames = np.array([np.count_nonzero(img) for img in imgs_mov])
         # count the number of nonzero elements in each frame
         cut_rescue  = np.quantile(nsig_frames, .3)
-        # set up threshold for rescuing as 30 percentile 
+        # set up threshold for rescuing as 30 percentile
         idx_rescue  = np.where((nsig_frames < cut_rescue) & (nsig_frames > 0))[0]
         # extract the index of frames where nonzero elements are below the threshold
         for i in idx_rescue:
@@ -273,10 +272,10 @@ class VTags():
     def make_predictions(self):
         '''
         '''
-        n        = self.ARGS["n"]
         # number of frames
-        k        = self.ARGS["n_id"]
+        n        = self.ARGS["n"]
         # number of animals
+        k        = self.ARGS["n_id"]
         clts     = self.OUTS["cls"]
         # n*number of interesting pixels, the cluster label of each pixel
         pos_yx   = self.OUTS["pos_yx"]
