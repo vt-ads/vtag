@@ -13,7 +13,7 @@ class VTPlayer(QWidget):
         self.setMouseTracking(True)
 
         # wd
-        self.wd       = " "
+        self.wd       = ""
         self.dataname = ""
         self.args     = args
         # Predictions
