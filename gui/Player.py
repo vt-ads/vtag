@@ -58,7 +58,7 @@ class VTPlayer(QWidget):
         self.update_frames()
 
     def init_args(self, # default arguments
-                        dataname="pig_2_sample",
+                        dataname="pig_3_sample",
                         fps=10/1000):
         # extract args
         args = self.args

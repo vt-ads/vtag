@@ -1,20 +1,23 @@
-from lib import *
+import pickle
+import os
+import numpy as np
+import cv2   as cv
+from .lib import get_binary
 
-class VTags():
+class VTag():
 
-    def __init__(self, k=1, n_tags=10, h5=None):
+    def __init__(self, n=1, tags=10, h5=None):
         if h5 is None:
             self.ARGS = dict(
-                            n      = -1,
-                            w      = -1,
-                            h      = -1,
-                            c      = -1,
-                            n_id   = k,
-                            n_tags = n_tags,
-                            k      = k * n_tags,
-                            bounds = [],
+                n_frames = -1,
+                w        = -1,
+                h        = -1,
+                c        = -1,
+                n_id     =  n,
+                n_tags   =  tags,
+                bounds = [],
             )
-            # all IMGS is (n, h, w, -1)
+            # all IMGS is (n_frames, h, w, -1)
             self.IMGS = dict(
                             rgb = None,
                             bw  = None,
@@ -24,7 +27,7 @@ class VTags():
             )
             self.OUTS = dict(
                             features = None, # (y, x) coordinate of centers of each k
-                            pos_yx   = None,  # (y, x) coordinate of edges
+                            pos_yx   = None, # (y, x) coordinate of edges
                             k_to_id  = None,
                             pcs = None,
                             pred_cls    = None,
@@ -45,15 +48,15 @@ class VTags():
         # check dimensions
         h, w, c = cv.imread(files[0]).shape
         # number of rows, columns and channels
-        # they are the same for all pictures 
-        # c is usually 3 for colorful pictures 
+        # they are the same for all pictures
+        # c is usually 3 for colorful pictures
 
         # create np matrix
         if n == -1:
             n = len(files)
         # n is the number of frames/pictures
         imgs_rgb = np.zeros((n, h, w, c), dtype=np.uint8)
-        # create a 4-dimensional ndarray for the video recording 
+        # create a 4-dimensional ndarray for the video recording
 
         # iterate through files
         for i in range(n):
@@ -65,7 +68,7 @@ class VTags():
         self.ARGS["h"] = h
         self.ARGS["w"] = w
         self.ARGS["c"] = c
-        # fill in the dimension of pictures 
+        # fill in the dimension of pictures
         if len(bounds) == 0:
             # [y, x]
             self.ARGS["bounds"] = np.array([[0, 0], [0, w], [h, w], [h, 0]])
@@ -83,7 +86,6 @@ class VTags():
         self.IMGS["edg"]      = np.zeros((n, h, w), dtype=np.uint8)
         self.IMGS["pred"]     = np.zeros((n, h, w), dtype=np.uint8)
         self.IMGS["pred_cls"] = np.zeros((n, h, w), dtype=np.uint8)
-        # n*h*w
 
         self.OUTS["pos_yx"]      = n * [None]
         self.OUTS["features"]    = np.zeros((n, self.ARGS["k"], 24))
@@ -91,10 +93,9 @@ class VTags():
         self.OUTS["pcs"]         = np.zeros((n, self.ARGS["k"], 2))
         self.OUTS["pred_labels"] = np.zeros((n, self.ARGS["n_id"], 2), dtype=np.int)
         # k: total number of clusters/sub-groups
-        # n_id: number of animals 
+        # n_id: number of animals
         # not used
         self.OUTS["cls"]         = n * [None]
-
         self.OUTS["labels"] = load_labels(self.ARGS["n"], self.ARGS["n_id"])
         # see "load_labels" in "lib"
 
@@ -114,7 +115,7 @@ class VTags():
         imgs_bw  = self.IMGS["bw"]
         # n*h*w
         n        = self.ARGS["n"]
-        # number of frames/pictures 
+        # number of frames/pictures
         imgs_mov_tmp = imgs_mov.copy()
 
         # compute std images

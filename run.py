@@ -1,5 +1,6 @@
+import sys
 from PyQt5.QtWidgets import QApplication
-from GUI_Player import *
+from gui.Player      import VTPlayer
 
 if __name__ == '__main__':
     args   = sys.argv

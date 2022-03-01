@@ -1,5 +1,6 @@
 {
     "python.pythonPath": "/usr/local/bin/python3",
-    "python.defaultInterpreterPath": "/usr/local/bin/python3",
-    "jupyter.jupyterServerType": "local"
+    "python.defaultInterpreterPath": "/Users/niche/miniforge3/envs/vtag/bin/python",
+    "jupyter.jupyterServerType": "local",
+    "git.ignoreLimitWarning": true
 }
