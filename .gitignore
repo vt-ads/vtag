@@ -2,8 +2,12 @@ ms/*
 data/*
 demo/*
 test/*
+out/*
 *.key
 *.h5
 *.png
 *.jpg
 
+!yolov5/*
+!datasets/*
+!mrcnn/*
