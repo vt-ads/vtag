@@ -109,32 +109,6 @@ palette_viridis.reverse()
 # === === === === === === === QT === === === === === === ===
 
 
-def detect_imgs(imgs, frame, span=1):
-    # imgs: black and white pictures, n*h*w
-    # frame: index of frame/picture
-    i = frame
-    j = span
-    # stack 2*2 iamges: out_img is a 4-frame std image
-    out_std = []
-    for _ in range(2):
-    # iterate twice, 2 things in each iteration 
-        out_std += [
-            imgs[i:  (i+j+1)].std(axis=(0, )),
-            imgs[(i-j):(i+1)].std(axis=(0, ))
-        ]
-        j += 1
-    # first iteration:
-    # sd of every pixel with itself in the next frame, and
-    # sd of every pixel with itself in the previous frame
-    # second iteration: 
-    # sd of every pixel with itself in the next two frames, and
-    # sd of every pixel with itself in the previous two frames
-
-    out_img = sum(out_std) / len(out_std)
-    # average over the 4 things
-    return out_img
-    # h*w
-
 
 
 def make_labels(imgs_p):
@@ -314,21 +288,6 @@ def find_center(img):
         cy, cx = -1, -1
     return cy, cx
 
-
-def find_nonzeros(img, is_values=False):
-    # img: h*w
-    y, x = np.nonzero(img)
-    # coordiantes of non-zero pixels 
-    # length of x, y would be the number of non-zero pixels
-    if is_values:
-    # if fales
-        return np.array([[y[i], x[i], img[y[i], x[i]]] for i in range(len(x))])
-        # get locations and the numeric value of non-zero pixels
-        # return 3 values for each non-zero pixel
-    else:
-        return np.array([[y[i], x[i]] for i in range(len(x))])
-        # only get the locations of non-zero pixels
-        # return 2 values
 
 def get_k_centers(img, k):
     img_c = find_clusters(img, k)
