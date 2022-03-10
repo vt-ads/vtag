@@ -1,7 +1,9 @@
 # imports
 import os
 import numpy  as np
+import pandas as pd
 import cv2    as cv
+import h5py
 
 # vtag functions
 from .motion  import detect_motion,\
@@ -15,14 +17,13 @@ from .tracking import LK_tracking, cluster_poi
 
 class VTag():
 
-    def __init__(self, k=1, tags=10, h5=None):
+    def __init__(self, k=1, h5=None):
         self.ARGS = dict(
             n        = -1,
             w        = -1,
             h        = -1,
             c        = -1,
-            k        = k,
-            n_tags   = tags,
+            k        = k
         )
         self.DATA = dict(
             imgs  = None,
@@ -31,25 +32,26 @@ class VTag():
             track = None,
         )
 
-    def load(self, path=".", n=None, bounds=[]):
+    def load(self, path=".", n=None, h5=None):
         """
         parameters
         ---
         n: the first-n files will be loaded
         """
         # list files
-        ls_imgs = os.listdir(path)
-        ls_imgs.sort()
-        files   = [os.path.join(path, f) for f in ls_imgs if ".png" in f]
+        ls_files = os.listdir(path)
+        ls_files.sort()
+        ls_imgs  = [os.path.join(path, f) for f in ls_files if ".png" in f]
+        h5       = [os.path.join(path, f) for f in ls_files if ".h5"  in f]
 
         # check dimensions
-        h, w, c = cv.imread(files[0]).shape
+        h, w, c = cv.imread(ls_imgs[0]).shape
 
         # load files into `imgs`
-        if n is None: n = len(files)
+        if n is None: n = len(ls_imgs)
         imgs = np.zeros((n, h, w), dtype=np.uint8)
         for i in range(n):
-            imgs[i] = cv.imread(files[i], cv.IMREAD_GRAYSCALE)
+            imgs[i, :, :] = cv.imread(ls_imgs[i], cv.IMREAD_GRAYSCALE)
         self.DATA["imgs"] = imgs
 
         # update data
@@ -57,8 +59,16 @@ class VTag():
         self.ARGS["h"] = h
         self.ARGS["w"] = w
         self.ARGS["c"] = c
-        self.DATA["error"] = np.zeros((self.ARGS["n"], self.ARGS["k"]))
-        self.DATA["track"] = np.zeros((self.ARGS["n"], self.ARGS["k"], 2))
+        # check if h5 exists
+        if len(h5) != 0:
+            with h5py.File("vtag.h5", "r") as f:
+                self.DATA["track"] = f["track"][:]
+                self.DATA["error"] = f["error"][:]
+                self.DATA["poi"]   = pd.DataFrame(f["poi"][:])
+                self.DATA["poi"].columns = ["frame", "y", "x"]
+        else:
+            self.DATA["error"] = np.zeros((self.ARGS["n"], self.ARGS["k"]))
+            self.DATA["track"] = np.zeros((self.ARGS["n"], self.ARGS["k"], 2))
 
     def detect_poi(self, n_ticks=2, n_denoise=2):
         ''''
@@ -99,6 +109,7 @@ class VTag():
         # init points
         lbs, pts_init = cluster_poi(self.poi(frame), self.ARGS["k"],
                                     method="agglo")
+        ls_pts[frame] = pts_init
 
         # forward (i=10, st=11, ed=20: [11,12,...,18,19])
         st, ed = frame + 1, self.ARGS["n"]
@@ -110,6 +121,19 @@ class VTag():
         ls_pts[1:frame], ls_err[1:frame] = LK_tracking(self.DATA["imgs"],
                                                 idx=frame, pts_idx=pts_init,
                                                 st=st, ed=ed)
+
+    def save(self):
+        # reduce size of poi dataframe
+        cols = self.DATA["poi"].columns
+        self.DATA["poi"][cols] = self.DATA["poi"][cols].apply(pd.to_numeric,
+                                                      downcast="unsigned")
+        # use hdf5 to compress results
+        with h5py.File("vtag.h5", "w") as f:
+            param = {"compression": "gzip", "chunks": True}
+            f.create_dataset("track", data=self.DATA["track"], **param)
+            f.create_dataset("error", data=self.DATA["error"], **param)
+            f.create_dataset("poi", data=self.DATA["poi"], **param)
+
     # getters---
     def poi(self, frame):
         if self.DATA["poi"] is not None:
@@ -122,3 +146,25 @@ class VTag():
             return self.DATA["imgs"][frame]
         else:
             return -1
+
+    def lbs(self, frame):
+        if self.DATA["track"] is not None:
+            return self.DATA["track"][frame]
+        else:
+            return -1
+
+    # GUI---
+    def update_k(self, k):
+        self.ARGS["k"] = k
+        self.DATA["error"] = np.zeros((self.ARGS["n"], self.ARGS["k"]))
+        self.DATA["track"] = np.zeros((self.ARGS["n"], self.ARGS["k"], 2))
+
+    def get_poi_mask(self, frame):
+        img = self.img(frame)
+        poi = self.poi(frame)
+        # iterate each poi
+        img_mask = np.zeros(img.shape, dtype=int)
+        for _, item in poi.iterrows():
+            img_mask[item.y, item.x] = 1
+        # output mask matrix (2D binary matrix)
+        return img_mask

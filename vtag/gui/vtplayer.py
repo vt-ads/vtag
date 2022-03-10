@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import QWidget, QGroupBox, QLabel,\
                             QPushButton, QRadioButton, QCheckBox,\
                             QSlider, QStyle, QTabWidget,\
                             QVBoxLayout, QGridLayout, QSizePolicy,\
-                            QFileDialog
+                            QFileDialog, QMessageBox
 from PyQt6.QtGui     import QPixmap
 
 # vtag imports
@@ -197,7 +197,7 @@ class VTPlayer(QWidget):
         self.timer.timeout.connect(self.next_frames)
         self.check["lbs"].stateChanged.connect(self.check_lbs)
         self.check["contours"].stateChanged.connect(self.check_contours)
-        self.buttons["wd"].clicked.connect(self.browse_wd)
+        self.buttons["wd"].clicked.connect(self.load_data)
         self.buttons["play"].clicked.connect(
             lambda x: self.change_status(not self.is_play))
         self.buttons["next"].clicked.connect(self.next_frames)
@@ -210,12 +210,26 @@ class VTPlayer(QWidget):
         self.sliders["alpha"].valueChanged.connect(self.set_alpha)
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    def browse_wd(self):
-        self.wd = QFileDialog().getExistingDirectory(self, "", "")
-        os.chdir(self.wd)
-        self.dataname = self.wd.split("/")[-1]
-        self.texts["wd"].setText(self.wd)
-        self.labels["wd"].setText("Data directory: %s" % self.dataname)
+    def load_data(self):
+        wd = QFileDialog().getExistingDirectory(self, "", "")
+        os.chdir(wd)
+        # vtag load files
+        try:
+            self.vtag.load()
+        except:
+            # no png found, or not a valid path
+            QMessageBox().information(self,
+                "Failed to load files",
+                "No valid data (.png, .jpg) is found")
+        # update number of images
+        n = self.vtag.ARGS["n"]
+        self.playback.set_n(n)
+        self.set_n(n)
+
+    def set_n(self, n):
+        self.n_frame = n
+        self.i_frame = 0
+        self.update_frames()
 
     def set_fps(self):
         new_fps = self.sliders["fps"].value()
@@ -274,9 +288,8 @@ class VTPlayer(QWidget):
         self.labels["frame"].setText("Frame: %d / %d" % (i, self.n_frame))
 
         self.frame.set_image(self.vtag.img(i))
-
-        # set cursor in the playback
         self.playback.set_frame(self.i_frame)
+
         # if is playing, update tmp frame in the playback
         if self.is_play:
             self.playback.set_frame_tmp(self.i_frame)
@@ -307,19 +320,21 @@ class VTPlayer(QWidget):
         if to_play:
             self.is_play = True
             self.buttons["play"].setIcon(
-                self.style().standardIcon(getattr(QStyle, "SP_MediaPause")))
+                self.style().standardIcon(getattr(QStyle.StandardPixmap,
+                                                  "SP_MediaPause")))
             self.timer.start(int(1 / self.fps))
 
         else:
             self.is_play = False
             self.buttons["play"].setIcon(
-                self.style().standardIcon(getattr(QStyle, "SP_MediaPlay")))
+                self.style().standardIcon(getattr(QStyle.StandardPixmap,
+                                                  "SP_MediaPlay")))
             self.timer.stop()
 
     def mousePressEvent(self, evt):
         self.is_press = True
         self.update_globalrec()
-        if self.globalrec["frame"].contains(evt.pos()):
+        if self.globalrec["frame"].contains(evt.position().toPoint()):
             # collect info
             k       = self.ARGS["n_id"]
             labels  = self.OUTS["pred_labels"]
@@ -343,7 +358,8 @@ class VTPlayer(QWidget):
             else:
                 self.update_frames()
 
-        elif self.globalrec["play"].contains(evt.pos()):
+        elif self.globalrec["play"].contains(evt.position().toPoint()):
+            # determine which frame to traverse to in the playback bar
             self.playback.set_frame_tmp(self.i_frame)
             if self.is_play:
                 x_mouse = evt.pos().x()
