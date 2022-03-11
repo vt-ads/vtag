@@ -2,10 +2,10 @@ import numpy as np
 from PyQt6.QtGui import QColor
 
 colorsets = [QColor(c) for c in np.array(["#000000",
-                                          "#ffff33", "#f94144", "#f3722c",
-                                          "#f8961e", "#f9844a", "#f9c74f",
+                                          "#ffff33", "#f94144", "#277da1",
+                                          "#f3722c", "#f8961e", "#f9844a", "#f9c74f",
                                           "#90be6d", "#43aa8b", "#4d908e",
-                                          "#577590", "#277da1"])]
+                                          "#577590", ])]
 
 alpha = 200
 palette_viridis = [

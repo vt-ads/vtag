@@ -21,20 +21,26 @@ class VTFrame(QLabel):
         self.mx = -1
         self.my = -1
 
-        # plotted labels
-        self.labels = None
-        # idx which label is assgined
-        self.idx_lbs = 0
+        # vtag objects
+        self.lbs = None
+        self.poi = None
+
         # user options
-        self.alpha       = 200   # opacity of the annotation
-        self.show_lbs    = False # whether to show labels (centroids)
-        self.show_motion = True  # whether to show motion (contour)
+        self.alpha    = 200   # opacity of the annotation
+        self.show_lbs = False # whether to show labels (centroids)
+        self.show_poi = False # whether to show poi (motino)
+
+        # idx which label is assgined (for cursor)
+        self.idx_lbs = 0
 
     def set_labels(self, labels):
         """
-        should be vtag.DATA["track"][i]
+        should be vtag.DATA["track"][i], a dataframe
         """
-        self.labels = labels
+        self.lbs = labels
+
+    def set_poi(self, poi):
+        self.poi = poi
 
     def set_image(self, image):
         """
@@ -51,9 +57,6 @@ class VTFrame(QLabel):
     def set_predict(self, img):
         self.img_detect = getIdx8QImg(img,  int(np.max(img)), alpha=self.alpha)
 
-    def set_label(self, lb_x, lb_y):
-        self.lb_x, self.lb_y = lb_x, lb_y
-
     def paintEvent(self, event):
         super().paintEvent(event)
         # open painter
@@ -63,9 +66,13 @@ class VTFrame(QLabel):
         if self.image is not None:
             self.setPixmap(self.image)
 
+        # ---draw poi
+        if self.show_poi:
+            draw_poi(self.poi, painter)
+
         # ---draw labels
         if self.show_lbs:
-            draw_labels(self.labels, painter)
+            draw_labels(self.lbs, painter)
 
         # close painter
         painter.end()
@@ -104,6 +111,14 @@ def get_QCursor(i, size=15):
     # return
     return QCursor(img_cur)
 
+
+def draw_poi(poi, painter):
+    """
+    poi should be a 2D binary mask with the same dimension
+    """
+    pixmap = getBinQImg(poi)
+    painter.drawPixmap(0, 0, pixmap)
+
 def draw_labels(labels, painter):
     pen = QPen()
     pen.setStyle(Qt.PenStyle.SolidLine)
@@ -124,12 +139,12 @@ def getRGBQImg(img):
     qImg = QImage(img.astype(np.uint8).copy(), w, h, w*3, QImage.Format.Format_RGB888)
     return QPixmap(qImg)
 
-def getBinQImg(img):
+def getBinQImg(img, alpha=200):
     h, w = img.shape[0], img.shape[1]
     qImg = QImage(img.astype(np.uint8).copy(), w,
                   h, w*1, QImage.Format.Format_Indexed8)
-    qImg.setColor(0, colorsets[0])
-    qImg.setColor(1, colorsets[1])
+    qImg.setColor(0, QColor(0, 0, 0, alpha).rgba())
+    qImg.setColor(1, colorsets[1].rgba())
     return QPixmap(qImg)
 
 def getIdx8QImg(img, k, alpha=200):  # k=20
