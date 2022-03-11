@@ -62,7 +62,7 @@ class VTPlayer(QWidget):
         self.labels    = dict(k        = QLabel("Tags: %d" % self.k),
                               frame    = QLabel("Frame: %d" % self.i_frame),
                               fps      = QLabel("Frame per second (FPS): %d" %
-                                                 int(self.fps * 1000)),
+                                                 int(self.fps)),
                               alpha    = QLabel("Opacity: %d / 255" % self.alpha),
                               describe = QLabel("Press 'Space' to play/pause. 'Arrow right/left' to the next/previous frame." ))
         self.check     = dict(lbs      = QCheckBox("Show labels"),
@@ -102,7 +102,7 @@ class VTPlayer(QWidget):
 
         self.sliders["fps"].setMinimum(1)
         self.sliders["fps"].setMaximum(60)
-        self.sliders["fps"].setValue(int(self.fps * 1000))
+        self.sliders["fps"].setValue(int(self.fps))
         self.sliders["fps"].setTickPosition(QSlider.TickPosition.NoTicks)
         self.sliders["fps"].setTickInterval(1)
 
@@ -230,16 +230,15 @@ class VTPlayer(QWidget):
         self.update_frames()
 
     def set_fps(self):
-        new_fps = self.sliders["fps"].value()
-        self.labels["fps"].setText("Frame per second (FPS): %d" % (new_fps))
-        self.fps = new_fps / 1000
+        self.fps = self.sliders["fps"].value()
+        self.labels["fps"].setText("Frame per second (FPS): %d" % (self.fps))
         self.change_status(True)
         self.update_frames()
 
     def set_alpha(self):
         alpha = self.sliders["alpha"].value()
         self.labels["alpha"].setText("Opacity: %d / 255" % alpha)
-        self.frame.alpha = alpha
+        self.frame.set_alpha(alpha)
         self.update_frames()
 
     def check_lbs(self):
@@ -261,11 +260,6 @@ class VTPlayer(QWidget):
             self.imgs_show = self.IMGS["pred"]
 
         self.update_frames()
-
-    def save_lbs(self):
-        labels = self.OUTS["pred_labels"]
-        n_ids  = self.ARGS["n_id"]
-        # save_labels(labels, n_ids, "labels.csv")
 
     def next_frames(self):
         self.i_frame += 1
@@ -305,9 +299,9 @@ class VTPlayer(QWidget):
         self.update_globalrec()
 
     def update_globalrec(self):
-        self.globalrec["frame"] = QRect(self.frame.mapToParent(QPoint(0, 0)),
+        self.globalrec["frame"] = QRect(self.frame.mapTo(self, QPoint(0, 0)),
                                         self.frame.size())
-        self.globalrec["play"] = QRect(self.playback.mapToParent(QPoint(0, 0)),
+        self.globalrec["play"] = QRect(self.playback.mapTo(self, QPoint(0, 0)),
                                         self.playback.size())
 
     def traverse_frames(self):
@@ -320,7 +314,7 @@ class VTPlayer(QWidget):
             self.buttons["play"].setIcon(
                 self.style().standardIcon(getattr(QStyle.StandardPixmap,
                                                   "SP_MediaPause")))
-            self.timer.start(int(1 / self.fps))
+            self.timer.start(int(1 / self.fps * 1000))
 
         else:
             self.is_play = False
@@ -333,7 +327,6 @@ class VTPlayer(QWidget):
         self.is_press = True
         self.update_globalrec()
         if self.globalrec["frame"].contains(evt.position().toPoint()):
-            print('frame')
             # collect info
             k       = self.ARGS["k"]
             labels  = self.OUTS["pred_labels"]
@@ -372,12 +365,10 @@ class VTPlayer(QWidget):
     def mouseMoveEvent(self, evt):
         self.update_globalrec()
         if self.globalrec["play"].contains(evt.position().toPoint()):
-            print("move play")
             if (not self.is_play) or (self.is_play & self.is_press):
                 x_mouse = evt.position().x()
                 self.i_frame = self.x_to_frame(x_mouse)
         else:
-            print("move not play")
             self.i_frame = self.playback.i_frame_tmp
         self.update_frames()
 
@@ -390,7 +381,7 @@ class VTPlayer(QWidget):
             self.prev_frames()
 
     def x_to_frame(self, x):
-        x_play = self.playback.mapToParent(QPoint(0, 0)).x()
+        x_play = self.playback.mapTo(self, QPoint(0, 0)).x()
         frame = int((x - x_play) // self.playback.bin)
         if frame > (self.n_frame - 1):
             frame = self.n_frame - 1

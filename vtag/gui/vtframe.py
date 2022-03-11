@@ -42,6 +42,10 @@ class VTFrame(QLabel):
     def set_poi(self, poi):
         self.poi = poi
 
+    def set_alpha(self, alpha):
+        print('alpha = %.2f' % alpha)
+        self.alpha = alpha
+
     def set_image(self, image):
         """
         parameters
@@ -68,7 +72,7 @@ class VTFrame(QLabel):
 
         # ---draw poi
         if self.show_poi:
-            draw_poi(self.poi, painter)
+            draw_poi(self.poi, alpha=self.alpha, painter=painter)
 
         # ---draw labels
         if self.show_lbs:
@@ -112,11 +116,11 @@ def get_QCursor(i, size=15):
     return QCursor(img_cur)
 
 
-def draw_poi(poi, painter):
+def draw_poi(poi, alpha, painter):
     """
     poi should be a 2D binary mask with the same dimension
     """
-    pixmap = getBinQImg(poi)
+    pixmap = getBinQImg(poi, alpha=alpha)
     painter.drawPixmap(0, 0, pixmap)
 
 def draw_labels(labels, painter):
@@ -144,7 +148,7 @@ def getBinQImg(img, alpha=200):
     qImg = QImage(img.astype(np.uint8).copy(), w,
                   h, w*1, QImage.Format.Format_Indexed8)
     qImg.setColor(0, QColor(0, 0, 0, alpha).rgba())
-    qImg.setColor(1, colorsets[1].rgba())
+    qImg.setColor(1, QColor(255, 255, 51, alpha).rgba())
     return QPixmap(qImg)
 
 def getIdx8QImg(img, k, alpha=200):  # k=20
