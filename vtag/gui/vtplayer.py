@@ -26,17 +26,20 @@ class VTPlayer(QWidget):
         # Status
         self.is_play       = False
         self.is_press      = False
-        self.label_counter = 0
+        self.is_load       = False
         # Display
         self.alpha = 200
         self.fps   = 10
-        self.k     = 0
+        # --- k tag
+        self.k     = 3
+        self.max_k = 10
+        self.i_tag = 0
         # Setup timer
         self.timer  = QTimer(self)
         # init components
         self.frame     = VTFrame()
         self.playback  = VTPlayback()
-        self.vtag      = VTag()
+        self.vtag      = None
 
         # init
         self.init_UI()
@@ -49,32 +52,33 @@ class VTPlayer(QWidget):
                            right    = QWidget(),
                            playback = QWidget(),
                            k        = QWidget())
-        self.groups = dict(anno    = QGroupBox("Annotation"),
-                           display = QGroupBox("Display"))
+        self.groups = dict(anno     = QGroupBox("Annotation"),
+                           display  = QGroupBox("Display"))
         self.buttons = dict(load  = QPushButton("Load data"),
                             poi   = QPushButton("Calculate POI"),
                             track = QPushButton("Track"),
                             save  = QPushButton("Save"),
                             # media
-                            play     = QPushButton(""),
-                            next     = QPushButton(""),
-                            prev     = QPushButton(""),)
-        self.labels    = dict(k        = QLabel("Tags: %d" % self.k),
-                              frame    = QLabel("Frame: %d" % self.i_frame),
-                              fps      = QLabel("Frame per second (FPS): %d" %
+                            play    = QPushButton(""),
+                            next    = QPushButton(""),
+                            prev    = QPushButton(""))
+        self.labels    = dict(k     = QLabel("Tags: %d" % self.k),
+                              frame = QLabel("Frame: %d" % self.i_frame),
+                              fps   = QLabel("Frame per second (FPS): %d" %
                                                  int(self.fps)),
                               alpha    = QLabel("Opacity: %d / 255" % self.alpha),
                               describe = QLabel("Press 'Space' to play/pause. 'Arrow right/left' to the next/previous frame." ))
-        self.check     = dict(lbs      = QCheckBox("Show labels"),
-                              poi      = QCheckBox("Show POI"))
-        self.sliders   = dict(k        = QSlider(Qt.Orientation.Horizontal, self),
-                              fps      = QSlider(Qt.Orientation.Horizontal, self),
-                              alpha    = QSlider(Qt.Orientation.Horizontal, self))
-        self.globalrec = dict(frame    = QRect(0, 0, 0, 0),
-                              play     = QRect(0, 0, 0, 0))
-        # for tags
-        self.toggles_k = dict()
-        self.labels_k  = dict()
+        self.check     = dict(lbs   = QCheckBox("Show labels"),
+                              poi   = QCheckBox("Show POI"))
+        self.sliders   = dict(k     = QSlider(Qt.Orientation.Horizontal, self),
+                              fps   = QSlider(Qt.Orientation.Horizontal, self),
+                              alpha = QSlider(Qt.Orientation.Horizontal, self))
+        self.globalrec = dict(frame = QRect(0, 0, 0, 0),
+                              play  = QRect(0, 0, 0, 0))
+
+        # for k tags
+        self.tags = dict(toggle = [], color = [])
+
         # set icons
         # https://joekuan.files.wordpress.com/2015/09/screen3.png
         self.buttons["play"].setIcon(
@@ -90,12 +94,12 @@ class VTPlayer(QWidget):
             self.style().standardIcon(getattr(QStyle.StandardPixmap,
                                               "SP_DialogOpenButton")))
         # checkboxes
-        self.check["lbs"].setChecked(False)
-        self.check["poi"].setChecked(False)
+        self.check["lbs"].setChecked(True)
+        self.check["poi"].setChecked(True)
 
         # sliders
         self.sliders["k"].setMinimum(1)
-        self.sliders["k"].setMaximum(10)
+        self.sliders["k"].setMaximum(self.max_k)
         self.sliders["k"].setValue(self.k)
         self.sliders["k"].setTickPosition(QSlider.TickPosition.NoTicks)
         self.sliders["k"].setTickInterval(1)
@@ -143,6 +147,8 @@ class VTPlayer(QWidget):
         layout_anno.addWidget(self.panel["k"])
         layout_anno.addWidget(self.buttons["track"])
         self.groups["anno"].setLayout(layout_anno)
+        self.set_layout_k()
+        self.update_layout_k()
 
         layout_display = QGridLayout(self)
         layout_display.addWidget(self.labels["fps"],    0, 0, 1, 2)
@@ -190,21 +196,48 @@ class VTPlayer(QWidget):
 
     def init_runtime(self):
         self.panel["left"].setMouseTracking(True)
-
         self.buttons["load"].clicked.connect(self.load_data)
         self.timer.timeout.connect(self.next_frames)
-        # self.check["lbs"].stateChanged.connect(self.check_lbs)
-        # self.check["contours"].stateChanged.connect(self.check_contours)
+        self.check["lbs"].stateChanged.connect(self.update_frames)
+        self.check["poi"].stateChanged.connect(self.update_frames)
         self.buttons["play"].clicked.connect(
             lambda x: self.change_status(not self.is_play))
         self.buttons["next"].clicked.connect(self.next_frames)
         self.buttons["prev"].clicked.connect(self.prev_frames)
         # self.buttons["save"].clicked.connect(self.save_lbs)
-        # self.toggles["edges"].clicked.connect(self.toggle)
-        # self.toggles["cls"].clicked.connect(self.toggle)
-        # self.toggles["pre"].clicked.connect(self.toggle)
         self.sliders["fps"].valueChanged.connect(self.set_fps)
         self.sliders["alpha"].valueChanged.connect(self.set_alpha)
+        self.sliders["k"].valueChanged.connect(self.set_k)
+
+    def update_layout_k(self):
+        layout = self.panel["k"].layout()
+        # remove existing widgets from the layout
+        for i in reversed(range(layout.count())):
+            layout.itemAt(i).widget().setParent(None)
+        # add needed widgets
+        for i in range(self.k):
+            self.tags["toggle"][i].setChecked(False)
+            layout.addWidget(self.tags["color"][i],
+                             0, i, Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(self.tags["toggle"][i],
+                             1, i, Qt.AlignmentFlag.AlignCenter)
+        # reset assigned i
+        self.set_i_tag(0)
+
+    def set_layout_k(self):
+        self.panel["k"].setLayout(QGridLayout(self))
+        for i in range(self.max_k):
+            # toggle
+            toggle = QRadioButton()
+            self.tags["toggle"] += [toggle]
+            # label
+            label  = QLabel()
+            colorbox = QPixmap(20, 20)
+            colorbox.fill(colorsets[i + 1])
+            label.setPixmap(colorbox)
+            self.tags["color"]  += [label]
+            # runtime
+            toggle.toggled.connect(self.toggle_tag)
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
     def load_data(self):
@@ -212,11 +245,15 @@ class VTPlayer(QWidget):
         os.chdir(wd)
         # vtag load files
         try:
+            self.vtag = VTag()
             self.vtag.load()
-            # update number of images
+            # get vtag arguments
             n = self.vtag.ARGS["n"]
-            self.playback.set_n(n)
+            k = self.vtag.ARGS["k"]
+            # update GUI
             self.set_n(n)
+            self.sliders["k"].setValue(k) # to trigger set_k()
+            self.is_load = True
         except Exception as e:
             # no png found, or not a valid path
             print(e)
@@ -224,10 +261,56 @@ class VTPlayer(QWidget):
                 "Failed to load files",
                 "No valid data (.png, .jpg) is found")
 
+    def toggle_tag(self):
+        i = 0
+        for i in range(self.k):
+            if self.tags["toggle"][i].isChecked():
+                break
+        self.i_tag       = i
+        self.frame.i_tag = i
+        self.frame.repaint()
+
+    # --- setter
+    def set_i_tag(self, i):
+        i = i % self.k
+        self.tags["toggle"][i].setChecked(True)
+
     def set_n(self, n):
         self.n_frame = n
         self.i_frame = 0
+        self.playback.set_n(n)
         self.update_frames()
+
+    def set_k(self):
+        """
+        Trigger by the GUI slider
+
+        self.set_k()
+            -> self.update_layout_k()
+            -> self.set_i_tag()
+            -> self.toggle_tag()
+        """
+        old_k = self.k
+        new_k = self.sliders["k"].value()
+        # change k
+        self.k = new_k
+        # update vtag
+        if self.is_load:
+            self.vtag.ARGS["k"] = new_k
+            self.vtag.DATA["lbs"] = reshape_matrix(
+                                        mat_old=self.vtag.DATA["lbs"],
+                                        shp_new=(self.n_frame, new_k, 2),
+                                        dim_old=old_k,
+                                        dim_new=new_k)
+            self.vtag.DATA["error"] = reshape_matrix(
+                                        mat_old=self.vtag.DATA["error"],
+                                        shp_new=(self.n_frame, new_k),
+                                        dim_old=old_k,
+                                        dim_new=new_k)
+        # update label
+        self.labels["k"].setText("Tags: %d" % self.k)
+        # update tag layout
+        self.update_layout_k()
 
     def set_fps(self):
         self.fps = self.sliders["fps"].value()
@@ -239,14 +322,6 @@ class VTPlayer(QWidget):
         alpha = self.sliders["alpha"].value()
         self.labels["alpha"].setText("Opacity: %d / 255" % alpha)
         self.frame.set_alpha(alpha)
-        self.update_frames()
-
-    def check_lbs(self):
-        self.frame.show_lbs = self.check["lbs"].isChecked()
-        self.update_frames()
-
-    def check_contours(self):
-        self.frame.show_detect = self.check["contours"].isChecked()
         self.update_frames()
 
     def toggle(self):
@@ -279,20 +354,26 @@ class VTPlayer(QWidget):
         i = self.i_frame
         self.labels["frame"].setText("Frame: %d / %d" % (i, self.n_frame))
 
-        self.frame.set_image(self.vtag.img(i))
-        self.playback.set_frame(self.i_frame)
+        if self.is_load:
+            self.frame.set_image(self.vtag.img(i))
+            self.playback.set_frame(self.i_frame)
 
-        # if is playing, update tmp frame in the playback
-        if self.is_play:
-            self.playback.set_frame_tmp(self.i_frame)
+            # if is playing, update tmp frame in the playback
+            if self.is_play:
+                self.playback.set_frame_tmp(self.i_frame)
 
-        # update label and poi
-        if self.vtag.DATA["lbs"] is not None:
-            self.frame.show_lbs = True
-            self.frame.set_labels(self.vtag.lbs(i))
-        if self.vtag.DATA["poi"] is not None:
-            self.frame.show_poi = True
-            self.frame.set_poi(self.vtag.mask(i))
+            # update label
+            if self.vtag.DATA["lbs"] is not None and self.check["lbs"].isChecked():
+                self.frame.set_labels(self.vtag.lbs(i))
+                self.frame.show_lbs = True
+            else:
+                self.frame.show_lbs = False
+            # update poi
+            if self.vtag.DATA["poi"] is not None and self.check["poi"].isChecked():
+                self.frame.set_poi(self.vtag.mask(i))
+                self.frame.show_poi = True
+            else:
+                self.frame.show_poi = False
 
         # update GUI
         self.frame.repaint()
@@ -326,38 +407,39 @@ class VTPlayer(QWidget):
     def mousePressEvent(self, evt):
         self.is_press = True
         self.update_globalrec()
-        if self.globalrec["frame"].contains(evt.position().toPoint()):
-            # collect info
-            k       = self.ARGS["k"]
-            labels  = self.OUTS["pred_labels"]
-            counter = self.label_counter
-            i       = self.i_frame
+        if self.is_load:
+            if self.globalrec["frame"].contains(evt.position().toPoint()) and\
+                evt.button() == Qt.MouseButton.LeftButton:
+                # collect info
+                k     = self.vtag.ARGS["k"]
+                lbs   = self.vtag.DATA["lbs"]
+                i_tag = self.i_tag
+                i     = self.i_frame
 
-            # update label counter
-            self.label_counter = (counter + 1) % k
-            self.frame.label_counter = self.label_counter
+                # update labels
+                lbs[i, i_tag, 0] = self.frame.mx
+                lbs[i, i_tag, 1] = self.frame.my
 
-            # get labels
-            x, y = self.frame.mx, self.frame.my
+                # update label counter
+                self.set_i_tag(i_tag + 1)
 
-            # enter labels
-            labels[i, counter, 1] = x
-            labels[i, counter, 0] = y
+                # if label all ids, move to next frame
+                if self.i_tag == 0:
+                    self.next_frames()
+                else:
+                    self.update_frames()
 
-            # if label all ids, move to next frame
-            if ((counter + 1) % k) == 0:
-                self.next_frames()
-            else:
+            elif self.globalrec["play"].contains(evt.position().toPoint()):
+                # determine which frame to traverse to in the playback bar
+                self.playback.set_frame_tmp(self.i_frame)
+                if self.is_play:
+                    x_mouse = evt.position().x()
+                    self.i_frame = self.x_to_frame(x_mouse)
                 self.update_frames()
 
-        elif self.globalrec["play"].contains(evt.position().toPoint()):
-            print('play')
-            # determine which frame to traverse to in the playback bar
-            self.playback.set_frame_tmp(self.i_frame)
-            if self.is_play:
-                x_mouse = evt.position().x()
-                self.i_frame = self.x_to_frame(x_mouse)
-            self.update_frames()
+        # switch i_tag
+        if evt.button() == Qt.MouseButton.RightButton:
+            self.set_i_tag(self.i_tag + 1)
 
     def mouseReleaseEvent(self, evt):
         self.is_press = False
@@ -386,3 +468,15 @@ class VTPlayer(QWidget):
         if frame > (self.n_frame - 1):
             frame = self.n_frame - 1
         return frame
+
+
+def reshape_matrix(mat_old, shp_new, dim_old, dim_new):
+    """
+    return new matrix (mat_new) with data from the old matrix (mat_old)
+    """
+    mat_new = np.zeros(shp_new)
+    if dim_new >= dim_old:
+        mat_new[:, :dim_old] = mat_old[:, :dim_old]
+    elif dim_new < dim_old:
+        mat_new[:, :dim_new] = mat_old[:, :dim_new]
+    return mat_new

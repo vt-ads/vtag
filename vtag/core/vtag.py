@@ -17,13 +17,13 @@ from .tracking import LK_tracking, cluster_poi
 
 class VTag():
 
-    def __init__(self, k=1):
+    def __init__(self, k=3):
         self.ARGS = dict(
-            n        = -1,
-            w        = -1,
-            h        = -1,
-            c        = -1,
-            k        = k
+            n   = -1,
+            w   = -1,
+            h   = -1,
+            c   = -1,
+            k   = k
         )
         self.DATA = dict(
             imgs  = None,
@@ -65,9 +65,10 @@ class VTag():
         # check if h5 exists
         if len(h5) != 0:
             with h5py.File(h5[0], "r") as f:
+                self.has_h5 = True
                 self.DATA["lbs"]   = f["lbs"][:]
                 self.DATA["error"] = f["error"][:]
-                self.DATA["poi"]   = pd.DataFrame(f["poi"][:])
+                self.DATA["poi"]   = pd.DataFrame(f["poi"][:]) # cuz it's numpy in h5
                 self.DATA["poi"].columns = ["frame", "y", "x"]
                 self.ARGS["k"]     = self.DATA["lbs"].shape[1]
         else:
@@ -111,7 +112,7 @@ class VTag():
         parameters
         ---
         frame   : integer, which frame to start tracking
-        pts_init: k by 2 (yx) numpy matrix
+        pts_init: k by 2 (xy) numpy matrix
         """
         ls_err = self.DATA["error"]
         ls_pts = self.DATA["lbs"]

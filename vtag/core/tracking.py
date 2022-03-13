@@ -14,12 +14,12 @@ def LK_tracking(imgs, idx, pts_idx, st, ed):
     ---
     imgs   : n x w x h numpy array
     idx    : idx th frame to generate pts_idx
-    pts_idx: starting tracking points, k by 1 by 2 (yx)
+    pts_idx: starting tracking points, k by 1 by 2 (xy)
     st, ed : start and ending indexes for tracking
 
     return
     ---
-    tracked points: n by k by 2 (yx)
+    tracked points: n by k by 2 (xy)
     error list    : n by k
     """
     # reshape points

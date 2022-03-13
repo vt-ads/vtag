@@ -31,7 +31,7 @@ class VTFrame(QLabel):
         self.show_poi = False # whether to show poi (motino)
 
         # idx which label is assgined (for cursor)
-        self.idx_lbs = 0
+        self.i_tag = 0
 
     def set_labels(self, labels):
         """
@@ -43,7 +43,6 @@ class VTFrame(QLabel):
         self.poi = poi
 
     def set_alpha(self, alpha):
-        print('alpha = %.2f' % alpha)
         self.alpha = alpha
 
     def set_image(self, image):
@@ -55,7 +54,7 @@ class VTFrame(QLabel):
         try:
             self.image = getGrayQImg(image)
         except Exception as e:
-            print(e)
+            print("vtframe: ", e)
             self.image = None
 
     def set_predict(self, img):
@@ -82,7 +81,7 @@ class VTFrame(QLabel):
         painter.end()
 
         # cursor
-        cursor = get_QCursor(self.idx_lbs)
+        cursor = get_QCursor(self.i_tag)
         self.setCursor(cursor)
 
     def mouseMoveEvent(self, evt):
