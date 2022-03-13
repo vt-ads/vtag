@@ -1,10 +1,10 @@
 import numpy as np
 from PyQt6.QtCore    import Qt
-from PyQt6.QtGui     import QPainter, QPen, QPixmap, QColor, QImage, QCursor
+from PyQt6.QtGui     import QPainter, QPen, QBrush, QPixmap, QColor, QImage, QCursor
 from PyQt6.QtWidgets import QLabel
 
 # vtag imports
-from .colors        import colorsets
+from .colors        import vtcolor
 from .utils         import drawCross
 
 class VTFrame(QLabel):
@@ -20,6 +20,7 @@ class VTFrame(QLabel):
         # mouse moving events
         self.mx = -1
         self.my = -1
+        self.size_m = 50 # detection area
 
         # vtag objects
         self.lbs = None
@@ -57,9 +58,6 @@ class VTFrame(QLabel):
             print("vtframe: ", e)
             self.image = None
 
-    def set_predict(self, img):
-        self.img_detect = getIdx8QImg(img,  int(np.max(img)), alpha=self.alpha)
-
     def paintEvent(self, event):
         super().paintEvent(event)
         # open painter
@@ -68,20 +66,25 @@ class VTFrame(QLabel):
         # ---draw background image
         if self.image is not None:
             self.setPixmap(self.image)
+            # annotation opacity
+            w, h = self.image.width(), self.image.height()
+            mask = QPixmap(w, h)
+            mask.fill(QColor(0, 0, 0, self.alpha))
+            painter.drawPixmap(0, 0, mask)
 
         # ---draw poi
         if self.show_poi:
-            draw_poi(self.poi, alpha=self.alpha, painter=painter)
+            draw_poi(self.poi, painter=painter)
 
         # ---draw labels
         if self.show_lbs:
-            draw_labels(self.lbs, painter)
+            draw_labels(labels=self.lbs, size=self.size_m, painter=painter)
 
         # close painter
         painter.end()
 
         # cursor
-        cursor = get_QCursor(self.i_tag)
+        cursor = get_QCursor(i=self.i_tag, size=self.size_m)
         self.setCursor(cursor)
 
     def mouseMoveEvent(self, evt):
@@ -91,62 +94,63 @@ class VTFrame(QLabel):
 
 def get_QCursor(i, size=15):
     # create transparent background
-    img_cur = QPixmap(size * 2, size * 2)
-    img_cur.fill(QColor(0, 0, 0, 0))
+    canvas = QPixmap(size, size)
+    canvas.fill(QColor(0, 0, 0, 0))
+
     # create painter
-    paint_cur = QPainter(img_cur)
-    paint_cur.drawPixmap(0, 0, img_cur)
-    # create pen
-    pen = QPen()
-    pen.setStyle(Qt.PenStyle.SolidLine)
-    # ---border (black)
-    pen.setWidth(10)
-    pen.setColor(colorsets[0])
-    paint_cur.setPen(pen)
-    drawCross(size, size, paint_cur, size=6)
-    # ---filled (color)
-    pen.setWidth(8)
-    pen.setColor(colorsets[i + 1])
-    paint_cur.setPen(pen)
-    drawCross(size, size, paint_cur, size=6)
+    painter = QPainter(canvas)
+    painter.drawPixmap(0, 0, canvas)
+
+    # draw circles
+    brush = QBrush()
+    brush.setStyle(Qt.BrushStyle.SolidPattern)
+    draw_circle(painter, brush, 0, 0, size, i)
+
     # close painter
-    paint_cur.end()
+    painter.end()
     # return
-    return QCursor(img_cur)
+    return QCursor(canvas)
 
-
-def draw_poi(poi, alpha, painter):
+def draw_poi(poi, painter):
     """
     poi should be a 2D binary mask with the same dimension
     """
-    pixmap = getBinQImg(poi, alpha=alpha)
+    pixmap = getBinQImg(poi)
     painter.drawPixmap(0, 0, pixmap)
 
-def draw_labels(labels, painter):
-    pen = QPen()
-    pen.setStyle(Qt.PenStyle.SolidLine)
+def draw_labels(labels, size, painter):
+    brush = QBrush()
+    brush.setStyle(Qt.BrushStyle.SolidPattern)
     for i, (x, y) in enumerate(labels):
-        # border (black)
-        pen.setWidth(10)
-        pen.setColor(colorsets[0])
-        painter.setPen(pen)
-        drawCross(x, y, painter, size=6)
-        # filled (color)
-        pen.setWidth(8)
-        pen.setColor(colorsets[i + 1])
-        painter.setPen(pen)
-        drawCross(x, y, painter, size=6)
+        draw_circle(painter, brush, x - size / 2, y - size / 2, size, i)
+
+def draw_circle(painter, brush, x, y, size, i_color, alpha=70):
+    """
+    x, y are at the top-left already
+    """
+    # centroids
+    brush.setColor(vtcolor(i_color + 1))
+    painter.setBrush(brush)
+    size_ct = 10
+    painter.drawEllipse(x + (size / 2) - (size_ct / 2),
+                        y + (size / 2) - (size_ct / 2),
+                        size_ct, size_ct)
+    # detect area
+    brush.setColor(vtcolor(i_color + 1, alpha=alpha))
+    painter.setBrush(brush)
+    painter.drawEllipse(x, y, size, size)
+
 
 def getRGBQImg(img):
     h, w = img.shape[0], img.shape[1]
     qImg = QImage(img.astype(np.uint8).copy(), w, h, w*3, QImage.Format.Format_RGB888)
     return QPixmap(qImg)
 
-def getBinQImg(img, alpha=200):
+def getBinQImg(img, alpha=150):
     h, w = img.shape[0], img.shape[1]
     qImg = QImage(img.astype(np.uint8).copy(), w,
                   h, w*1, QImage.Format.Format_Indexed8)
-    qImg.setColor(0, QColor(0, 0, 0, alpha).rgba())
+    qImg.setColor(0, QColor(0, 0, 0, 0).rgba())
     qImg.setColor(1, QColor(255, 255, 51, alpha).rgba())
     return QPixmap(qImg)
 

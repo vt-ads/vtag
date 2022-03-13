@@ -1,10 +1,13 @@
 import os
+from threading import local
+import time
+
 from PyQt6.QtCore    import Qt, QTimer, QPoint, QRect
 from PyQt6.QtWidgets import QWidget, QGroupBox, QLabel,\
                             QPushButton, QRadioButton, QCheckBox,\
                             QSlider, QStyle, QTabWidget,\
                             QHBoxLayout, QVBoxLayout, QGridLayout, QSizePolicy,\
-                            QFileDialog, QMessageBox
+                            QFileDialog, QMessageBox, QComboBox
 from PyQt6.QtGui     import QPixmap
 
 # vtag imports
@@ -13,7 +16,7 @@ from .utils      import ls_files
 from .vtframe    import *
 from .vtplayback import *
 from .dnd        import DnDLineEdit
-from .colors import colorsets
+from .colors import vtcolor
 
 class VTPlayer(QWidget):
     def __init__(self, args):
@@ -32,6 +35,7 @@ class VTPlayer(QWidget):
         self.fps   = 10
         # --- k tag
         self.k     = 3
+        self.size  = 50 # detect size
         self.max_k = 10
         self.i_tag = 0
         # Setup timer
@@ -46,6 +50,9 @@ class VTPlayer(QWidget):
         self.init_runtime()
         self.setFocus()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # TODO
+        # self.load()
+        # TODO
 
     def init_UI(self):
         self.panel  = dict(left     = QWidget(),
@@ -63,6 +70,8 @@ class VTPlayer(QWidget):
                             next    = QPushButton(""),
                             prev    = QPushButton(""))
         self.labels    = dict(k     = QLabel("Tags: %d" % self.k),
+                              track = QLabel("Tracker"),
+                              size  = QLabel("Detect size: %d" % self.size),
                               frame = QLabel("Frame: %d" % self.i_frame),
                               fps   = QLabel("Frame per second (FPS): %d" %
                                                  int(self.fps)),
@@ -71,10 +80,12 @@ class VTPlayer(QWidget):
         self.check     = dict(lbs   = QCheckBox("Show labels"),
                               poi   = QCheckBox("Show POI"))
         self.sliders   = dict(k     = QSlider(Qt.Orientation.Horizontal, self),
+                              size  = QSlider(Qt.Orientation.Horizontal, self),
                               fps   = QSlider(Qt.Orientation.Horizontal, self),
                               alpha = QSlider(Qt.Orientation.Horizontal, self))
         self.globalrec = dict(frame = QRect(0, 0, 0, 0),
                               play  = QRect(0, 0, 0, 0))
+        self.combos    = dict(track = QComboBox())
 
         # for k tags
         self.tags = dict(toggle = [], color = [])
@@ -104,6 +115,12 @@ class VTPlayer(QWidget):
         self.sliders["k"].setTickPosition(QSlider.TickPosition.NoTicks)
         self.sliders["k"].setTickInterval(1)
 
+        self.sliders["size"].setMinimum(1)
+        self.sliders["size"].setMaximum(300)
+        self.sliders["size"].setValue(self.size)
+        self.sliders["size"].setTickPosition(QSlider.TickPosition.NoTicks)
+        self.sliders["size"].setTickInterval(1)
+
         self.sliders["fps"].setMinimum(1)
         self.sliders["fps"].setMaximum(60)
         self.sliders["fps"].setValue(int(self.fps))
@@ -115,6 +132,13 @@ class VTPlayer(QWidget):
         self.sliders["alpha"].setValue(self.alpha)
         self.sliders["alpha"].setTickPosition(QSlider.TickPosition.NoTicks)
         self.sliders["alpha"].setTickInterval(1)
+
+        # combo tracker
+        self.combos["track"].addItem("SparseLK")
+        self.combos["track"].addItem("CSRT")
+        self.combos["track"].addItem("MedianFLow")
+        self.combos["track"].addItem("mosse")
+        self.combos["track"].addItem("MIL")
 
         # finalize
         self.set_layout()
@@ -145,6 +169,10 @@ class VTPlayer(QWidget):
         layout_anno.addWidget(self.labels["k"])
         layout_anno.addWidget(self.sliders["k"])
         layout_anno.addWidget(self.panel["k"])
+        layout_anno.addWidget(self.labels["size"])
+        layout_anno.addWidget(self.sliders["size"])
+        layout_anno.addWidget(self.labels["track"])
+        layout_anno.addWidget(self.combos["track"])
         layout_anno.addWidget(self.buttons["track"])
         self.groups["anno"].setLayout(layout_anno)
         self.set_layout_k()
@@ -196,7 +224,9 @@ class VTPlayer(QWidget):
 
     def init_runtime(self):
         self.panel["left"].setMouseTracking(True)
-        self.buttons["load"].clicked.connect(self.load_data)
+        self.buttons["load"].clicked.connect(self.load)
+        self.buttons["save"].clicked.connect(self.save)
+        self.buttons["track"].clicked.connect(self.track)
         self.timer.timeout.connect(self.next_frames)
         self.check["lbs"].stateChanged.connect(self.update_frames)
         self.check["poi"].stateChanged.connect(self.update_frames)
@@ -204,10 +234,10 @@ class VTPlayer(QWidget):
             lambda x: self.change_status(not self.is_play))
         self.buttons["next"].clicked.connect(self.next_frames)
         self.buttons["prev"].clicked.connect(self.prev_frames)
-        # self.buttons["save"].clicked.connect(self.save_lbs)
         self.sliders["fps"].valueChanged.connect(self.set_fps)
         self.sliders["alpha"].valueChanged.connect(self.set_alpha)
         self.sliders["k"].valueChanged.connect(self.set_k)
+        self.sliders["size"].valueChanged.connect(self.set_size)
 
     def update_layout_k(self):
         layout = self.panel["k"].layout()
@@ -233,17 +263,21 @@ class VTPlayer(QWidget):
             # label
             label  = QLabel()
             colorbox = QPixmap(20, 20)
-            colorbox.fill(colorsets[i + 1])
+            colorbox.fill(vtcolor(i + 1))
             label.setPixmap(colorbox)
             self.tags["color"]  += [label]
             # runtime
             toggle.toggled.connect(self.toggle_tag)
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    def load_data(self):
-        wd = QFileDialog().getExistingDirectory(self, "", "")
-        os.chdir(wd)
+    def load(self):
+        # TESTING --------------------
+        # wd = QFileDialog().getExistingDirectory(self, "", "")
+        # TODO
+        wd = "/Users/niche/OneDrive - Virginia Tech/GitHub/vtag/data/pig_3_sample"
+        # TESTING --------------------
         # vtag load files
+        os.chdir(wd)
         try:
             self.vtag = VTag()
             self.vtag.load()
@@ -260,6 +294,7 @@ class VTPlayer(QWidget):
             QMessageBox().information(self,
                 "Failed to load files",
                 "No valid data (.png, .jpg) is found")
+        self.update_frames()
 
     def toggle_tag(self):
         i = 0
@@ -270,6 +305,29 @@ class VTPlayer(QWidget):
         self.frame.i_tag = i
         self.frame.repaint()
 
+    def save(self):
+        filename = "vtag_" + localtime() + ".h5"
+        try:
+            self.vtag.save(filename=filename)
+            QMessageBox().information(self,
+                "Annotation Saved",
+                "The annotation has been saved to '%s'" % filename)
+        except:
+            QMessageBox().information(self,
+                    "Failed",
+                    "No vtag object is found")
+
+    def track(self):
+        if self.is_load:
+            self.vtag.track(frame=self.i_frame,
+                            tracker=self.combos["track"].currentText(),
+                            pts_init=self.vtag.lbs(self.i_frame),
+                            winSize=(self.size, self.size))
+        QMessageBox().information(self,
+                "Track",
+                "Tracking completed")
+        self.update_frames()
+
     # --- setter
     def set_i_tag(self, i):
         i = i % self.k
@@ -279,6 +337,11 @@ class VTPlayer(QWidget):
         self.n_frame = n
         self.i_frame = 0
         self.playback.set_n(n)
+        self.update_frames()
+
+    def set_size(self):
+        self.size = self.sliders["size"].value()
+        self.labels["size"].setText("Detect size: %d" % self.size)
         self.update_frames()
 
     def set_k(self):
@@ -314,7 +377,7 @@ class VTPlayer(QWidget):
 
     def set_fps(self):
         self.fps = self.sliders["fps"].value()
-        self.labels["fps"].setText("Frame per second (FPS): %d" % (self.fps))
+        self.labels["fps"].setText("Frame per second (FPS): %d" % self.fps)
         self.change_status(True)
         self.update_frames()
 
@@ -375,6 +438,9 @@ class VTPlayer(QWidget):
             else:
                 self.frame.show_poi = False
 
+        # update cursor in vtframe
+        self.frame.size_m = self.size
+
         # update GUI
         self.frame.repaint()
         self.update_globalrec()
@@ -384,10 +450,6 @@ class VTPlayer(QWidget):
                                         self.frame.size())
         self.globalrec["play"] = QRect(self.playback.mapTo(self, QPoint(0, 0)),
                                         self.playback.size())
-
-    def traverse_frames(self):
-        self.i_frame = self.playback.value()
-        self.update_frames()
 
     def change_status(self, to_play):
         if to_play:
@@ -454,6 +516,12 @@ class VTPlayer(QWidget):
             self.i_frame = self.playback.i_frame_tmp
         self.update_frames()
 
+    def wheelEvent(self, evt):
+        # scroll down => positive
+        delta = evt.pixelDelta().y() / 4
+        size  = self.size
+        self.sliders["size"].setValue(int(size - delta))
+
     def keyPressEvent(self, evt):
         if evt.key() == Qt.Key.Key_Space:
             self.change_status(not self.is_play)
@@ -480,3 +548,6 @@ def reshape_matrix(mat_old, shp_new, dim_old, dim_new):
     elif dim_new < dim_old:
         mat_new[:, :dim_new] = mat_old[:, :dim_new]
     return mat_new
+
+def localtime():
+    return time.strftime("%y%m%d%H%M%S", time.localtime())

@@ -19,7 +19,7 @@ setuptools.setup(name='vtagger',
                                    # math, models
                                    'sklearn', 'scipy', 'matplotlib',
                                    # CV
-                                   'opencv-python',
+                                   'opencv-python', "opencv-contrib-python"
                                    # GUI
                                    'PyQt6',
                                    'qdarkstyle'

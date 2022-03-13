@@ -13,7 +13,7 @@ from .motion  import detect_motion,\
                      add_vision_persistence
 from .contour import detect_contour
 from .utils   import get_nonzero_from_img
-from .tracking import LK_tracking, cluster_poi
+from .tracking import track, cluster_poi
 
 class VTag():
 
@@ -107,7 +107,7 @@ class VTag():
         # extract POI(y, x)
         self.DATA["poi"] = get_nonzero_from_img(imgs_poi_e)
 
-    def track(self, frame, pts_init=None):
+    def track(self, frame, tracker, pts_init=None, winSize=(50, 50)):
         """
         parameters
         ---
@@ -123,24 +123,27 @@ class VTag():
                                         method="agglo")
         ls_pts[frame] = pts_init
 
+        # define parameters
+        kwargs = dict({"imgs": self.DATA["imgs"],
+                       "idx": frame,
+                       "tracker": tracker,
+                       "pts_idx": pts_init,
+                       "winSize": winSize})
+
         # forward (i=10, st=11, ed=20: [11,12,...,18,19])
         st, ed = frame + 1, self.ARGS["n"]
-        ls_pts[st:], ls_err[st:] = LK_tracking(self.DATA["imgs"],
-                                        idx=frame, pts_idx=pts_init,
-                                        st=st, ed=ed)
+        ls_pts[st:], ls_err[st:] = track(st=st, ed=ed, **kwargs)
         # backward (i=10, st=9, ed=0: [9,8,7,6,5,4,3,2,1])
         st, ed = frame - 1, 0
-        ls_pts[1:frame], ls_err[1:frame] = LK_tracking(self.DATA["imgs"],
-                                                idx=frame, pts_idx=pts_init,
-                                                st=st, ed=ed)
+        ls_pts[1:frame], ls_err[1:frame] = track(st=st, ed=ed, **kwargs)
 
-    def save(self):
+    def save(self, filename="vtag.h5"):
         # reduce size of poi dataframe
         cols = self.DATA["poi"].columns
         self.DATA["poi"][cols] = self.DATA["poi"][cols].apply(pd.to_numeric,
                                                       downcast="unsigned")
         # use hdf5 to compress results
-        out_h5 = os.path.join(self.path, "vtag.h5")
+        out_h5 = os.path.join(self.path, filename)
         with h5py.File(out_h5, "w") as f:
             param = {"compression": "gzip", "chunks": True}
             f.create_dataset("lbs",   data=self.DATA["lbs"],   **param)
@@ -163,6 +166,12 @@ class VTag():
     def lbs(self, frame):
         if self.DATA["lbs"] is not None:
             return self.DATA["lbs"][frame]
+        else:
+            return -1
+
+    def error(self, frame):
+        if self.DATA["error"] is not None:
+            return self.DATA["error"][frame]
         else:
             return -1
 
