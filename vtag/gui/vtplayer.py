@@ -15,13 +15,13 @@ from ..core.vtag import VTag
 from .utils      import ls_files
 from .vtframe    import *
 from .vtplayback import *
-from .dnd        import DnDLineEdit
 from .colors import vtcolor
 
 class VTPlayer(QWidget):
     def __init__(self, args):
         super().__init__()
         self.setMouseTracking(True)
+        self.setAcceptDrops(True)
 
         # Frames
         self.n_frame  = 0
@@ -35,8 +35,8 @@ class VTPlayer(QWidget):
         self.fps   = 10
         # --- k tag
         self.k     = 3
-        self.size  = 50 # detect size
-        self.max_k = 10
+        self.size  = 70 # detect size
+        self.max_k = 9
         self.i_tag = 0
         # Setup timer
         self.timer  = QTimer(self)
@@ -106,7 +106,7 @@ class VTPlayer(QWidget):
                                               "SP_DialogOpenButton")))
         # checkboxes
         self.check["lbs"].setChecked(True)
-        self.check["poi"].setChecked(True)
+        self.check["poi"].setChecked(False)
 
         # sliders
         self.sliders["k"].setMinimum(1)
@@ -142,7 +142,6 @@ class VTPlayer(QWidget):
 
         # finalize
         self.set_layout()
-        # self.move(300, 200)
         self.setWindowTitle('Virtual Tags')
         # self.setGeometry(50, 50, 1400, 550)
         self.show()
@@ -270,7 +269,7 @@ class VTPlayer(QWidget):
             toggle.toggled.connect(self.toggle_tag)
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    def load(self):
+    def load(self, h5="vtag.h5"):
         # TESTING --------------------
         # wd = QFileDialog().getExistingDirectory(self, "", "")
         # TODO
@@ -280,7 +279,7 @@ class VTPlayer(QWidget):
         os.chdir(wd)
         try:
             self.vtag = VTag()
-            self.vtag.load()
+            self.vtag.load(h5=h5)
             # get vtag arguments
             n = self.vtag.ARGS["n"]
             k = self.vtag.ARGS["k"]
@@ -288,6 +287,9 @@ class VTPlayer(QWidget):
             self.set_n(n)
             self.sliders["k"].setValue(k) # to trigger set_k()
             self.is_load = True
+            QMessageBox().information(self,
+                "",
+                "Data loaded successfully")
         except Exception as e:
             # no png found, or not a valid path
             print(e)
@@ -536,6 +538,31 @@ class VTPlayer(QWidget):
         if frame > (self.n_frame - 1):
             frame = self.n_frame - 1
         return frame
+
+    # DnD
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+            for url in event.mimeData().urls():
+                text = str(url.toLocalFile())
+            if ".h5" in text:
+                self.load(h5=text)
+        else:
+            event.ignore()
 
 
 def reshape_matrix(mat_old, shp_new, dim_old, dim_new):

@@ -1,7 +1,7 @@
 import numpy as np
-from PyQt6.QtCore    import Qt
-from PyQt6.QtGui     import QPainter, QPen, QBrush, QPixmap, QColor, QImage, QCursor
-from PyQt6.QtWidgets import QLabel
+from PyQt6.QtCore    import Qt, QRect
+from PyQt6.QtGui     import QPainter, QPen, QBrush, QPixmap, QColor, QImage, QCursor, QFont
+from PyQt6.QtWidgets import QLabel, QWidget
 
 # vtag imports
 from .colors        import vtcolor
@@ -20,7 +20,7 @@ class VTFrame(QLabel):
         # mouse moving events
         self.mx = -1
         self.my = -1
-        self.size_m = 50 # detection area
+        self.size_m = 70 # detection area
 
         # vtag objects
         self.lbs = None
@@ -123,6 +123,11 @@ def draw_labels(labels, size, painter):
     brush.setStyle(Qt.BrushStyle.SolidPattern)
     for i, (x, y) in enumerate(labels):
         draw_circle(painter, brush, x - size / 2, y - size / 2, size, i)
+        rect = QRect(x + 5, y + 5, 10, 10)
+        font = QFont()
+        font.setPixelSize(10)
+        painter.setFont(font)
+        painter.drawText(rect, 0, "%d" % i)
 
 def draw_circle(painter, brush, x, y, size, i_color, alpha=70):
     """

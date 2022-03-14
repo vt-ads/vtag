@@ -1,5 +1,5 @@
 import setuptools
-setuptools.setup(name='vtagger',
+setuptools.setup(name='python-vtag',
                  version='0.9.0',
                  description='Semi-Supervised Top-View Animal Tracking',
                  url='https://github.com/vt-ads/vtag',

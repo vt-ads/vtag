@@ -4,6 +4,7 @@ import numpy  as np
 import pandas as pd
 import cv2    as cv
 import h5py
+from matplotlib import pyplot as plt
 
 # vtag functions
 from .motion  import detect_motion,\
@@ -34,7 +35,7 @@ class VTag():
         self.path = ""
         self.has_h5 = False
 
-    def load(self, path=".", n=None):
+    def load(self, path=".", n=None, h5=None):
         """
         parameters
         ---
@@ -45,7 +46,7 @@ class VTag():
         ls_files = os.listdir(path)
         ls_files.sort()
         ls_imgs  = [os.path.join(path, f) for f in ls_files if ".png" in f]
-        h5       = [os.path.join(path, f) for f in ls_files if "vtag.h5" in f]
+        h5_file  = [os.path.join(path, f) for f in ls_files if "vtag.h5" in f]
 
         # check dimensions
         h, w, c = cv.imread(ls_imgs[0]).shape
@@ -63,8 +64,12 @@ class VTag():
         self.ARGS["w"] = w
         self.ARGS["c"] = c
         # check if h5 exists
-        if len(h5) != 0:
-            with h5py.File(h5[0], "r") as f:
+        if isinstance(h5, str):
+            h5_file += [h5]
+
+        if len(h5_file) != 0:
+            with h5py.File(h5_file[-1], "r") as f:
+                print("Loaded: %s" % h5_file[-1])
                 self.has_h5 = True
                 self.DATA["lbs"]   = f["lbs"][:]
                 self.DATA["error"] = f["error"][:]
@@ -107,7 +112,7 @@ class VTag():
         # extract POI(y, x)
         self.DATA["poi"] = get_nonzero_from_img(imgs_poi_e)
 
-    def track(self, frame, tracker, pts_init=None, winSize=(50, 50)):
+    def track(self, frame, tracker, pts_init=None, winSize=(70, 70)):
         """
         parameters
         ---
@@ -133,9 +138,9 @@ class VTag():
         # forward (i=10, st=11, ed=20: [11,12,...,18,19])
         st, ed = frame + 1, self.ARGS["n"]
         ls_pts[st:], ls_err[st:] = track(st=st, ed=ed, **kwargs)
-        # backward (i=10, st=9, ed=0: [9,8,7,6,5,4,3,2,1])
-        st, ed = frame - 1, 0
-        ls_pts[1:frame], ls_err[1:frame] = track(st=st, ed=ed, **kwargs)
+        # # backward (i=10, st=9, ed=0: [9,8,7,6,5,4,3,2,1])
+        # st, ed = frame - 1, 0
+        # ls_pts[1:frame], ls_err[1:frame] = track(st=st, ed=ed, **kwargs)
 
     def save(self, filename="vtag.h5"):
         # reduce size of poi dataframe
@@ -149,6 +154,9 @@ class VTag():
             f.create_dataset("lbs",   data=self.DATA["lbs"],   **param)
             f.create_dataset("error", data=self.DATA["error"], **param)
             f.create_dataset("poi",   data=self.DATA["poi"],   **param)
+
+    def evaluate(self, truth):
+        return np.mean(np.square(self.DATA["lbs"] - truth).sum(axis=2)**.5, axis=1)
 
     # getters---
     def poi(self, frame):
@@ -184,6 +192,12 @@ class VTag():
             img_mask[item.y, item.x] = 1
         # output mask matrix (2D binary matrix)
         return img_mask
+
+    def snapshot(self, frame):
+        img = self.img(frame)
+        lbs = self.lbs(frame)
+        plt.imshow(img)
+        plt.scatter(lbs[:, 0], lbs[:, 1], marker="x", c='red', s=50)
 
     # GUI---
     def update_k(self, k):
