@@ -1,6 +1,6 @@
 # Virtual Tag (VTag): a semi-supervised pipeline for tracking pig activity with a single top-view camera
 
-![](res/interface.jpg)
+![](res/interface.png)
 
 ## Installation
 
