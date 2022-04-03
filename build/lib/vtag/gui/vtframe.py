@@ -4,7 +4,7 @@ from PyQt6.QtGui     import QPainter, QPen, QBrush, QPixmap, QColor, QImage, QCu
 from PyQt6.QtWidgets import QLabel, QWidget
 
 # vtag imports
-from .colors        import vtcolor
+from .colors        import vtcolor, ls_colors
 from .utils         import drawCross
 
 class VTFrame(QLabel):
@@ -74,7 +74,7 @@ class VTFrame(QLabel):
 
         # ---draw poi
         if self.show_poi:
-            draw_poi(self.poi, painter=painter)
+            draw_poi(self.poi, painter=painter, alpha=self.alpha)
 
         # ---draw labels
         if self.show_lbs:
@@ -111,11 +111,11 @@ def get_QCursor(i, size=15):
     # return
     return QCursor(canvas)
 
-def draw_poi(poi, painter):
+def draw_poi(poi, painter, alpha=200):
     """
     poi should be a 2D binary mask with the same dimension
     """
-    pixmap = getBinQImg(poi)
+    pixmap = getIdx8QImg(poi, k=9, alpha=alpha)
     painter.drawPixmap(0, 0, pixmap)
 
 def draw_labels(labels, size, painter):
@@ -162,14 +162,14 @@ def getBinQImg(img, alpha=150):
 def getIdx8QImg(img, k, alpha=200):  # k=20
     h, w = img.shape[0], img.shape[1]
     qImg = QImage(img.astype(np.uint8).copy(), w,
-                  h, w*1, QImage.Format.Format_Indexed8)
-    nc = len(colorsets) - 1  # exclude 0: background color
+                  h, w * 1, QImage.Format.Format_Indexed8)
+    nc = len(ls_colors) - 1  # exclude 0: background color
     # background color
     qImg.setColor(0, QColor(0, 0, 0, alpha).rgba())
     # cluster color
     for i in range(k):
         # use '%' to iterate the colormap
-        qImg.setColor(i + 1, colorsets[(i % nc) + 1].rgba())
+        qImg.setColor(i + 1, vtcolor((i % nc) + 1).rgba())
     return QPixmap(qImg)
 
 def getGrayQImg(img):

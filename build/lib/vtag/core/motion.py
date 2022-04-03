@@ -1,4 +1,5 @@
 import numpy as np
+import pandas as pd
 import cv2   as cv
 from .utils import get_binary
 
@@ -10,22 +11,29 @@ def detect_motion(imgs, frame, span=1):
     frame: index of frame/picture
 
     return
-    ___
+    ---
     motion itensity in the same dimensions
+
+    example
+    ---
+    i = 3; j = 1
+    3:5 ->     3-4
+    2:4 ->   2-3
+    3:6 ->     3-4-5
+    1:4 -> 1-2-3
     """
     i = frame
-    j = span
+    n = len(imgs)
     # stack 2*2 iamges: out_img is a 4-frame std image
     out_std = []
     # iterate twice, 2 things in each iteration
-    for _ in range(2):
-        out_std += [
-            imgs[i:  (i+j+1)].std(axis=(0, )),
-            imgs[(i-j):(i+1)].std(axis=(0, ))
-        ]
-        j += 1
+    for j in range(span, span + 2): # j = span, span + 1
+        if i - j >= 0:
+            out_std += [imgs[(i - j) : (i     + 1)].std(axis=(0, ))]
+        if i + j <= n:
+            out_std += [imgs[(i    ) : (i + j + 1)].std(axis=(0, ))]
 
-    # average over the 4 things
+    # average motion
     out_img = sum(out_std) / len(out_std)
     return out_img
 
@@ -80,3 +88,15 @@ def add_vision_persistence(imgs_poi):
     for i in range(len(imgs_poi)):
         imgs_poi[i] = get_binary(imgs_poi[i], cutabs=cut)
 
+def get_nonzero_from_img(img):
+    """
+    Turn a sparse 2d array to a n-size 2d array containing non-zero pixel position (x, y, k)
+    """
+    n = len(img)
+    fs, ys, xs = np.nonzero(img)
+    array = [np.array([], dtype=int) for _ in range(n)]
+    for i in range(n):
+        idx = fs == i
+        array[i] = np.array([[x, y, 0] for x, y in zip(xs[idx], ys[idx])])
+    # return
+    return array
