@@ -56,3 +56,4 @@ def show_poi(img, poi, lbs=None, figsize=None):
             plt.scatter(poi[lbs == lb]["x"],
                         poi[lbs == lb]["y"], 3)
 
+

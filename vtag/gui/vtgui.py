@@ -12,12 +12,11 @@ from PyQt6.QtGui     import QPixmap
 
 # vtag imports
 from ..core.vtag import VTag
-from .utils      import ls_files
 from .vtframe    import *
 from .vtplayback import *
 from .colors import vtcolor
 
-class VTPlayer(QWidget):
+class VTGUI(QWidget):
     def __init__(self, args):
         super().__init__()
         self.setMouseTracking(True)
@@ -31,7 +30,7 @@ class VTPlayer(QWidget):
         self.is_press      = False
         self.is_load       = False
         # Display
-        self.alpha = 200
+        self.alpha = 50
         self.fps   = 10
         # --- k tag
         self.k     = 3
@@ -62,8 +61,9 @@ class VTPlayer(QWidget):
         self.groups = dict(anno     = QGroupBox("Annotation"),
                            display  = QGroupBox("Display"))
         self.buttons = dict(load  = QPushButton("Load data"),
-                            poi   = QPushButton("Calculate POI"),
+                            poi   = QPushButton("Estimate POI"),
                             track = QPushButton("Track"),
+                            save_poi = QPushButton("Save POI"),
                             save  = QPushButton("Save"),
                             # media
                             play    = QPushButton(""),
@@ -136,13 +136,11 @@ class VTPlayer(QWidget):
         # combo tracker
         self.combos["track"].addItem("SparseLK")
         self.combos["track"].addItem("CSRT")
-        self.combos["track"].addItem("MedianFLow")
-        self.combos["track"].addItem("mosse")
         self.combos["track"].addItem("MIL")
 
         # finalize
         self.set_layout()
-        self.setWindowTitle('Virtual Tags')
+        self.setWindowTitle('VTag')
         # self.setGeometry(50, 50, 1400, 550)
         self.show()
 
@@ -173,6 +171,7 @@ class VTPlayer(QWidget):
         layout_anno.addWidget(self.labels["track"])
         layout_anno.addWidget(self.combos["track"])
         layout_anno.addWidget(self.buttons["track"])
+        layout_anno.addWidget(self.buttons["poi"])
         self.groups["anno"].setLayout(layout_anno)
         self.set_layout_k()
         self.update_layout_k()
@@ -202,10 +201,10 @@ class VTPlayer(QWidget):
         self.panel["left"].setLayout(layout_left)
 
         layout_right = QVBoxLayout()
-        layout_right.addWidget(self.buttons["load"])
-        layout_right.addWidget(self.buttons["poi"])
+        # layout_right.addWidget(self.buttons["load"])
         layout_right.addWidget(self.groups["anno"])
         layout_right.addWidget(self.groups["display"])
+        layout_right.addWidget(self.buttons["save_poi"])
         layout_right.addWidget(self.buttons["save"])
         self.panel["right"].setLayout(layout_right)
 
@@ -225,7 +224,9 @@ class VTPlayer(QWidget):
         self.panel["left"].setMouseTracking(True)
         self.buttons["load"].clicked.connect(self.load)
         self.buttons["save"].clicked.connect(self.save)
+        self.buttons["save_poi"].clicked.connect(self.save_poi)
         self.buttons["track"].clicked.connect(self.track)
+        self.buttons["poi"].clicked.connect(self.estimate_poi)
         self.timer.timeout.connect(self.next_frames)
         self.check["lbs"].stateChanged.connect(self.update_frames)
         self.check["poi"].stateChanged.connect(self.update_frames)
@@ -269,33 +270,35 @@ class VTPlayer(QWidget):
             toggle.toggled.connect(self.toggle_tag)
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    def load(self, h5="vtag.h5"):
+    def load(self, path=False):
         # TESTING --------------------
-        # wd = QFileDialog().getExistingDirectory(self, "", "")
         # TODO
-        wd = "/Users/niche/OneDrive - Virginia Tech/GitHub/vtag/data/pig_3_sample"
+        # wd = "/Users/niche/OneDrive - Virginia Tech/GitHub/vtag/data/pig_3_sample"
         # TESTING --------------------
-        # vtag load files
-        os.chdir(wd)
-        try:
-            self.vtag = VTag()
-            self.vtag.load(h5=h5)
-            # get vtag arguments
-            n = self.vtag.ARGS["n"]
-            k = self.vtag.ARGS["k"]
-            # update GUI
-            self.set_n(n)
-            self.sliders["k"].setValue(k) # to trigger set_k()
-            self.is_load = True
-            QMessageBox().information(self,
-                "",
-                "Data loaded successfully")
-        except Exception as e:
-            # no png found, or not a valid path
-            print(e)
-            QMessageBox().information(self,
-                "Failed to load files",
-                "No valid data (.png, .jpg) is found")
+
+        # try:
+        if path is False:
+            qdialog = QFileDialog()
+            path, _ = qdialog.getOpenFileName(self, "", "")
+        self.vtag = VTag()
+        self.vtag.load(path=path)
+        # get vtag arguments
+        n = self.vtag.ARGS["n"]
+        k = self.vtag.ARGS["k"]
+        # update GUI
+        self.set_n(n)
+        self.sliders["k"].setValue(k) # to trigger set_k()
+        self.is_load = True
+        self.playback.set_error(self.vtag.DATA["error"])
+        QMessageBox().information(self, "", "Data loaded successfully")
+        # except Exception as e:
+        #     # no png found, or not a valid path
+        #     print(e)
+        #     QMessageBox().information(self,
+        #         "Failed to load files",
+        #         "No valid data (.mp4, .png, .jpg) is found")
+
+        # refresh screen
         self.update_frames()
 
     def toggle_tag(self):
@@ -306,6 +309,18 @@ class VTPlayer(QWidget):
         self.i_tag       = i
         self.frame.i_tag = i
         self.frame.repaint()
+
+    def save_poi(self):
+        try:
+            self.vtag.save_mask(frame=self.i_frame)
+            path = os.path.join(self.vtag.stream.dirsave, "mask")
+            QMessageBox().information(self,
+                "Annotation Saved",
+                "The annotation has been saved to '%s'" % path)
+        except:
+            QMessageBox().information(self,
+                    "Failed",
+                    "No vtag object is found")
 
     def save(self):
         filename = "vtag_" + localtime() + ".h5"
@@ -324,10 +339,23 @@ class VTPlayer(QWidget):
             self.vtag.track(frame=self.i_frame,
                             tracker=self.combos["track"].currentText(),
                             pts_init=self.vtag.lbs(self.i_frame),
-                            winSize=(self.size, self.size))
+                            win_xy=(self.size, self.size))
+            self.playback.set_error(self.vtag.DATA["error"])
+
         QMessageBox().information(self,
                 "Track",
                 "Tracking completed")
+
+        self.update_frames()
+
+    def estimate_poi(self):
+        if self.is_load:
+            self.vtag.detect_poi(self.i_frame)
+
+        QMessageBox().information(self,
+                "POI",
+                "POI estimation completed")
+
         self.update_frames()
 
     # --- setter
@@ -362,9 +390,14 @@ class VTPlayer(QWidget):
         # update vtag
         if self.is_load:
             self.vtag.ARGS["k"] = new_k
-            self.vtag.DATA["lbs"] = reshape_matrix(
+            self.vtag.DATA["lbs"]   = reshape_matrix(
                                         mat_old=self.vtag.DATA["lbs"],
                                         shp_new=(self.n_frame, new_k, 2),
+                                        dim_old=old_k,
+                                        dim_new=new_k)
+            self.vtag.DATA["area"]  = reshape_matrix(
+                                        mat_old=self.vtag.DATA["area"],
+                                        shp_new=(self.n_frame, new_k),
                                         dim_old=old_k,
                                         dim_new=new_k)
             self.vtag.DATA["error"] = reshape_matrix(
@@ -559,15 +592,15 @@ class VTPlayer(QWidget):
             event.accept()
             for url in event.mimeData().urls():
                 text = str(url.toLocalFile())
-            if ".h5" in text:
-                self.load(h5=text)
+            self.load(path=text)
         else:
             event.ignore()
 
 
 def reshape_matrix(mat_old, shp_new, dim_old, dim_new):
     """
-    return new matrix (mat_new) with data from the old matrix (mat_old)
+    reshape (expand or shrink) the old matrix to new shape
+    new matrix (mat_new) with data retained from the old matrix (mat_old)
     """
     mat_new = np.zeros(shp_new)
     if dim_new >= dim_old:

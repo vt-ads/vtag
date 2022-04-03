@@ -1,0 +1,8 @@
+numpy
+pandas>=0.19.2
+sklearn
+scipy
+matplotlib
+opencv-python
+opencv-contrib-pythonPyQt6
+qdarkstyle

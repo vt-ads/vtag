@@ -1,11 +1,16 @@
 import numpy as np
 from PyQt6.QtGui import QColor
 
-colorsets = [QColor(c) for c in np.array(["#000000",
-                                          "#ffff33", "#f94144", "#f3722c",
-                                          "#f8961e", "#f9844a", "#f9c74f",
-                                          "#90be6d", "#43aa8b", "#4d908e",
-                                          "#577590", "#277da1"])]
+ls_colors = np.array(["#000000",
+                      "#E53D00", "#05668D", "#254D32",
+                      "#34113F", "#62BBC1", "#A5BE00",
+                      "#EF6461", "#BCF4F5", "#E9D758"])
+
+def vtcolor(i, alpha=255):
+    color_out = QColor(ls_colors[i])
+    color_out.setAlpha(alpha)
+    return color_out
+
 
 alpha = 200
 palette_viridis = [
@@ -32,3 +37,7 @@ palette_viridis.reverse()
 #             qRgb(13, 136, 250),  # 7
 #             qRgb(247, 129, 191),  # 8
 #             qRgb(153, 153, 153)]  # 9
+
+# "#f3722c", "#f8961e", "#f9844a", "#f9c74f",
+# "#90be6d", "#43aa8b", "#4d908e",
+# "#577590"

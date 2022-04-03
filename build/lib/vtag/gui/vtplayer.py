@@ -1,82 +1,95 @@
 import os
+from threading import local
+import time
+
 from PyQt6.QtCore    import Qt, QTimer, QPoint, QRect
 from PyQt6.QtWidgets import QWidget, QGroupBox, QLabel,\
                             QPushButton, QRadioButton, QCheckBox,\
                             QSlider, QStyle, QTabWidget,\
-                            QVBoxLayout, QGridLayout, QSizePolicy,\
-                            QFileDialog
+                            QHBoxLayout, QVBoxLayout, QGridLayout, QSizePolicy,\
+                            QFileDialog, QMessageBox, QComboBox
 from PyQt6.QtGui     import QPixmap
 
 # vtag imports
-from core.vtag   import VTag
+from ..core.vtag import VTag
 from .utils      import ls_files
 from .vtframe    import *
 from .vtplayback import *
-from .dnd        import DnDLineEdit
+from .colors import vtcolor
 
 class VTPlayer(QWidget):
     def __init__(self, args):
         super().__init__()
         self.setMouseTracking(True)
+        self.setAcceptDrops(True)
 
-        # wd
-        self.wd       = ""
-        self.dataname = ""
-        self.args     = args
-        # Predictions
-        self.imgs_show = []
-        self.alpha     = 200
         # Frames
         self.n_frame  = 0
         self.i_frame  = 0
         # Status
         self.is_play       = False
         self.is_press      = False
-        self.has_anno      = False
-        self.label_counter = 0
+        self.is_load       = False
+        # Display
+        self.alpha = 200
+        self.fps   = 10
+        # --- k tag
+        self.k     = 3
+        self.size  = 70 # detect size
+        self.max_k = 9
+        self.i_tag = 0
         # Setup timer
         self.timer  = QTimer(self)
-        # arg
-        self.fps = 10
+        # init components
+        self.frame     = VTFrame()
+        self.playback  = VTPlayback()
+        self.vtag      = None
 
         # init
         self.init_UI()
         self.init_runtime()
         self.setFocus()
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        # TODO
+        # self.load()
+        # TODO
 
     def init_UI(self):
-        # init components
-        self.frame     = VTFrame()
-        self.playback  = VTPlayback()
-
-        self.texts     = dict(wd       = DnDLineEdit())
-        self.groups    = dict(display  = QGroupBox("Display Mode"),
-                              anno     = QGroupBox("Annotations"))
-        self.labels    = dict(frame    = QLabel("Frame: %d" % self.i_frame),
-                              fps      = QLabel("Frame per second (FPS): %d" %
-                                                int(self.fps * 1000)),
-                              wd       = QLabel("Data directory"),
+        self.panel  = dict(left     = QWidget(),
+                           right    = QWidget(),
+                           playback = QWidget(),
+                           k        = QWidget())
+        self.groups = dict(anno     = QGroupBox("Annotation"),
+                           display  = QGroupBox("Display"))
+        self.buttons = dict(load  = QPushButton("Load data"),
+                            poi   = QPushButton("Calculate POI"),
+                            track = QPushButton("Track"),
+                            save  = QPushButton("Save"),
+                            # media
+                            play    = QPushButton(""),
+                            next    = QPushButton(""),
+                            prev    = QPushButton(""))
+        self.labels    = dict(k     = QLabel("Tags: %d" % self.k),
+                              track = QLabel("Tracker"),
+                              size  = QLabel("Detect size: %d" % self.size),
+                              frame = QLabel("Frame: %d" % self.i_frame),
+                              fps   = QLabel("Frame per second (FPS): %d" %
+                                                 int(self.fps)),
                               alpha    = QLabel("Opacity: %d / 255" % self.alpha),
                               describe = QLabel("Press 'Space' to play/pause. 'Arrow right/left' to the next/previous frame." ))
-        self.buttons   = dict(wd       = QPushButton("Browse"),
-                              play     = QPushButton(""),
-                              next     = QPushButton(""),
-                              prev     = QPushButton(""),
-                              run      = QPushButton("Analyze video"),
-                              save     = QPushButton("Save labels"))
-        self.check     = dict(lbs      = QCheckBox("Show labels"),
-                              contours = QCheckBox("Show contours"))
-        self.sliders   = dict(fps      = QSlider(Qt.Orientation.Horizontal, self),
-                              alpha    = QSlider(Qt.Orientation.Horizontal, self))
-        self.toggles   = dict(edges    = QRadioButton("Edges"),
-                              cls      = QRadioButton("Clusters"),
-                              pre      = QRadioButton("Predictions"))
-        self.globalrec = dict(frame    = QRect(0, 0, 0, 0),
-                              play     = QRect(0, 0, 0, 0))
-        # WD
-        self.texts["wd"].setText(self.wd)
-        self.labels["wd"].setText("Data directory: %s" % self.dataname)
+        self.check     = dict(lbs   = QCheckBox("Show labels"),
+                              poi   = QCheckBox("Show POI"))
+        self.sliders   = dict(k     = QSlider(Qt.Orientation.Horizontal, self),
+                              size  = QSlider(Qt.Orientation.Horizontal, self),
+                              fps   = QSlider(Qt.Orientation.Horizontal, self),
+                              alpha = QSlider(Qt.Orientation.Horizontal, self))
+        self.globalrec = dict(frame = QRect(0, 0, 0, 0),
+                              play  = QRect(0, 0, 0, 0))
+        self.combos    = dict(track = QComboBox())
+
+        # for k tags
+        self.tags = dict(toggle = [], color = [])
+
         # set icons
         # https://joekuan.files.wordpress.com/2015/09/screen3.png
         self.buttons["play"].setIcon(
@@ -88,24 +101,29 @@ class VTPlayer(QWidget):
         self.buttons["prev"].setIcon(
             self.style().standardIcon(getattr(QStyle.StandardPixmap,
                                               "SP_MediaSeekBackward")))
-        self.buttons["wd"].setIcon(
+        self.buttons["load"].setIcon(
             self.style().standardIcon(getattr(QStyle.StandardPixmap,
                                               "SP_DialogOpenButton")))
         # checkboxes
         self.check["lbs"].setChecked(True)
-        self.check["contours"].setChecked(True)
-
-        # tabs
-        self.config = QWidget()
-        self.dshbrd = QWidget()
-        self.tabs   = QTabWidget()
-        self.tabs.addTab(self.config, "Configuration")
-        self.tabs.addTab(self.dshbrd,   "Dash Board")
+        self.check["poi"].setChecked(False)
 
         # sliders
+        self.sliders["k"].setMinimum(1)
+        self.sliders["k"].setMaximum(self.max_k)
+        self.sliders["k"].setValue(self.k)
+        self.sliders["k"].setTickPosition(QSlider.TickPosition.NoTicks)
+        self.sliders["k"].setTickInterval(1)
+
+        self.sliders["size"].setMinimum(1)
+        self.sliders["size"].setMaximum(300)
+        self.sliders["size"].setValue(self.size)
+        self.sliders["size"].setTickPosition(QSlider.TickPosition.NoTicks)
+        self.sliders["size"].setTickInterval(1)
+
         self.sliders["fps"].setMinimum(1)
         self.sliders["fps"].setMaximum(60)
-        self.sliders["fps"].setValue(int(self.fps * 1000))
+        self.sliders["fps"].setValue(int(self.fps))
         self.sliders["fps"].setTickPosition(QSlider.TickPosition.NoTicks)
         self.sliders["fps"].setTickInterval(1)
 
@@ -115,11 +133,17 @@ class VTPlayer(QWidget):
         self.sliders["alpha"].setTickPosition(QSlider.TickPosition.NoTicks)
         self.sliders["alpha"].setTickInterval(1)
 
+        # combo tracker
+        self.combos["track"].addItem("SparseLK")
+        self.combos["track"].addItem("CSRT")
+        self.combos["track"].addItem("MedianFLow")
+        self.combos["track"].addItem("mosse")
+        self.combos["track"].addItem("MIL")
+
         # finalize
         self.set_layout()
-        self.move(300, 200)
         self.setWindowTitle('Virtual Tags')
-        self.setGeometry(50, 50, 1400, 550)
+        # self.setGeometry(50, 50, 1400, 550)
         self.show()
 
     def set_layout(self):
@@ -139,103 +163,230 @@ class VTPlayer(QWidget):
             margin-top: 0.5em;
         }
         """)
-        # layout tab
-        self.groups["display"] = QGroupBox("Display mode")
-        layout_grp_display = QVBoxLayout()
-        layout_grp_display.addWidget(self.toggles["edges"])
-        layout_grp_display.addWidget(self.toggles["cls"])
-        layout_grp_display.addWidget(self.toggles["pre"])
-        self.groups["display"].setLayout(layout_grp_display)
+        #---small components
+        layout_anno = QVBoxLayout()
+        layout_anno.addWidget(self.labels["k"])
+        layout_anno.addWidget(self.sliders["k"])
+        layout_anno.addWidget(self.panel["k"])
+        layout_anno.addWidget(self.labels["size"])
+        layout_anno.addWidget(self.sliders["size"])
+        layout_anno.addWidget(self.labels["track"])
+        layout_anno.addWidget(self.combos["track"])
+        layout_anno.addWidget(self.buttons["track"])
+        self.groups["anno"].setLayout(layout_anno)
+        self.set_layout_k()
+        self.update_layout_k()
 
-        self.groups["anno"] = QGroupBox("Annotations")
-        layout_grp_ann = QGridLayout(self)
-        layout_grp_ann.addWidget(
-            self.labels["alpha"], 0, 0, 1, 2, alignment=Qt.AlignmentFlag.AlignBottom)
-        layout_grp_ann.addWidget(
-            self.sliders["alpha"], 1, 0, 1, 2, alignment=Qt.AlignmentFlag.AlignTop)
-        layout_grp_ann.addWidget(self.groups["display"], 2, 0, 2, 1)
-        layout_grp_ann.addWidget(self.check["lbs"],      2, 1)
-        layout_grp_ann.addWidget(self.check["contours"], 3, 1)
-        self.groups["anno"].setLayout(layout_grp_ann)
+        layout_display = QGridLayout(self)
+        layout_display.addWidget(self.labels["fps"],    0, 0, 1, 2)
+        layout_display.addWidget(self.sliders["fps"],   1, 0, 1, 2)
+        layout_display.addWidget(self.labels["alpha"],  2, 0, 1, 2)
+        layout_display.addWidget(self.sliders["alpha"], 3, 0, 1, 2)
+        layout_display.addWidget(self.check["lbs"],     4, 0, 1, 1)
+        layout_display.addWidget(self.check["poi"],     4, 1, 1, 1)
+        self.groups["display"].setLayout(layout_display)
 
-        layout_config = QGridLayout(self)
-        layout_config.addWidget(self.labels["wd"], 0, 0, alignment=Qt.AlignmentFlag.AlignBottom)
-        layout_config.addWidget(self.texts["wd"], 1, 0, 1, 3, alignment=Qt.AlignmentFlag.AlignTop)
-        layout_config.addWidget(self.buttons["wd"], 1, 3, alignment=Qt.AlignmentFlag.AlignTop)
-        layout_config.addWidget(self.labels["fps"], 2, 0, 1, 4, alignment=Qt.AlignmentFlag.AlignBottom)
-        layout_config.addWidget(self.sliders["fps"], 3, 0, 1, 4, alignment=Qt.AlignmentFlag.AlignTop)
-        layout_config.addWidget(self.groups["anno"], 4, 0, 1, 4)
-        self.config.setLayout(layout_config)
+        layout_playback = QGridLayout(self)
+        layout_playback.addWidget(self.buttons["prev"],    0, 0)
+        layout_playback.addWidget(self.buttons["play"],    0, 1)
+        layout_playback.addWidget(self.buttons["next"],    0, 2)
+        layout_playback.addWidget(self.labels["frame"],    1, 0, 1, 3)
+        layout_playback.addWidget(self.labels["describe"], 0, 3, 2, 3)
+        self.panel["playback"].setLayout(layout_playback)
 
-        # layout main
-        layout = QGridLayout(self)
-        layout.addWidget(self.frame,  0, 0, 1, 4, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.tabs,   0, 4, 1, 2, alignment=Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(self.buttons["prev"], 1, 0)
-        layout.addWidget(self.buttons["play"], 1, 1)
-        layout.addWidget(self.buttons["next"], 1, 2)
-        layout.addWidget(self.playback,  1, 3)
-        layout.addWidget(self.labels["frame"], 2, 0, 1, 3)
-        layout.addWidget(self.labels["describe"], 2, 3)
-        layout.addWidget(self.buttons["run"],  1, 4, 2, 1)
-        layout.addWidget(self.buttons["save"], 1, 5, 2, 1)
+        #---panels
+        layout_left = QVBoxLayout()
+        layout_left.addWidget(self.frame)
+        layout_left.addWidget(self.playback)
+        layout_left.addWidget(self.panel["playback"])
+        self.panel["left"].setLayout(layout_left)
+
+        layout_right = QVBoxLayout()
+        layout_right.addWidget(self.buttons["load"])
+        layout_right.addWidget(self.buttons["poi"])
+        layout_right.addWidget(self.groups["anno"])
+        layout_right.addWidget(self.groups["display"])
+        layout_right.addWidget(self.buttons["save"])
+        self.panel["right"].setLayout(layout_right)
+
+        # main
+        layout = QHBoxLayout()
+        layout.addWidget(self.panel["left"])
+        layout.addWidget(self.panel["right"])
         self.setLayout(layout)
 
         # align & size
-        self.tabs.setSizePolicy(QSizePolicy.Policy.Expanding,
-                                QSizePolicy.Policy.Expanding)
-        self.buttons["save"].setSizePolicy(QSizePolicy.Policy.Expanding,
-                                           QSizePolicy.Policy.Expanding)
-        self.buttons["run"].setSizePolicy(QSizePolicy.Policy.Expanding,
-                                          QSizePolicy.Policy.Expanding)
         self.frame.setSizePolicy(QSizePolicy.Policy.Expanding,
                                  QSizePolicy.Policy.Expanding)
         self.playback.setSizePolicy(QSizePolicy.Policy.Expanding,
                                     QSizePolicy.Policy.Expanding)
 
     def init_runtime(self):
+        self.panel["left"].setMouseTracking(True)
+        self.buttons["load"].clicked.connect(self.load)
+        self.buttons["save"].clicked.connect(self.save)
+        self.buttons["track"].clicked.connect(self.track)
         self.timer.timeout.connect(self.next_frames)
-        self.check["lbs"].stateChanged.connect(self.check_lbs)
-        self.check["contours"].stateChanged.connect(self.check_contours)
-        self.buttons["wd"].clicked.connect(self.browse_wd)
+        self.check["lbs"].stateChanged.connect(self.update_frames)
+        self.check["poi"].stateChanged.connect(self.update_frames)
         self.buttons["play"].clicked.connect(
             lambda x: self.change_status(not self.is_play))
         self.buttons["next"].clicked.connect(self.next_frames)
         self.buttons["prev"].clicked.connect(self.prev_frames)
-        self.buttons["save"].clicked.connect(self.save_lbs)
-        self.toggles["edges"].clicked.connect(self.toggle)
-        self.toggles["cls"].clicked.connect(self.toggle)
-        self.toggles["pre"].clicked.connect(self.toggle)
         self.sliders["fps"].valueChanged.connect(self.set_fps)
         self.sliders["alpha"].valueChanged.connect(self.set_alpha)
+        self.sliders["k"].valueChanged.connect(self.set_k)
+        self.sliders["size"].valueChanged.connect(self.set_size)
+
+    def update_layout_k(self):
+        layout = self.panel["k"].layout()
+        # remove existing widgets from the layout
+        for i in reversed(range(layout.count())):
+            layout.itemAt(i).widget().setParent(None)
+        # add needed widgets
+        for i in range(self.k):
+            self.tags["toggle"][i].setChecked(False)
+            layout.addWidget(self.tags["color"][i],
+                             0, i, Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(self.tags["toggle"][i],
+                             1, i, Qt.AlignmentFlag.AlignCenter)
+        # reset assigned i
+        self.set_i_tag(0)
+
+    def set_layout_k(self):
+        self.panel["k"].setLayout(QGridLayout(self))
+        for i in range(self.max_k):
+            # toggle
+            toggle = QRadioButton()
+            self.tags["toggle"] += [toggle]
+            # label
+            label  = QLabel()
+            colorbox = QPixmap(20, 20)
+            colorbox.fill(vtcolor(i + 1))
+            label.setPixmap(colorbox)
+            self.tags["color"]  += [label]
+            # runtime
+            toggle.toggled.connect(self.toggle_tag)
 
 # --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- --- ---
-    def browse_wd(self):
-        self.wd = QFileDialog().getExistingDirectory(self, "", "")
-        os.chdir(self.wd)
-        self.dataname = self.wd.split("/")[-1]
-        self.texts["wd"].setText(self.wd)
-        self.labels["wd"].setText("Data directory: %s" % self.dataname)
+    def load(self, h5="vtag.h5"):
+        # TESTING --------------------
+        # wd = QFileDialog().getExistingDirectory(self, "", "")
+        # TODO
+        wd = "/Users/niche/OneDrive - Virginia Tech/GitHub/vtag/data/pig_3_sample"
+        # TESTING --------------------
+        # vtag load files
+        os.chdir(wd)
+        try:
+            self.vtag = VTag()
+            self.vtag.load(h5=h5)
+            # get vtag arguments
+            n = self.vtag.ARGS["n"]
+            k = self.vtag.ARGS["k"]
+            # update GUI
+            self.set_n(n)
+            self.sliders["k"].setValue(k) # to trigger set_k()
+            self.is_load = True
+            QMessageBox().information(self,
+                "",
+                "Data loaded successfully")
+        except Exception as e:
+            # no png found, or not a valid path
+            print(e)
+            QMessageBox().information(self,
+                "Failed to load files",
+                "No valid data (.png, .jpg) is found")
+        self.update_frames()
+
+    def toggle_tag(self):
+        i = 0
+        for i in range(self.k):
+            if self.tags["toggle"][i].isChecked():
+                break
+        self.i_tag       = i
+        self.frame.i_tag = i
+        self.frame.repaint()
+
+    def save(self):
+        filename = "vtag_" + localtime() + ".h5"
+        try:
+            self.vtag.save(filename=filename)
+            QMessageBox().information(self,
+                "Annotation Saved",
+                "The annotation has been saved to '%s'" % filename)
+        except:
+            QMessageBox().information(self,
+                    "Failed",
+                    "No vtag object is found")
+
+    def track(self):
+        if self.is_load:
+            self.vtag.track(frame=self.i_frame,
+                            tracker=self.combos["track"].currentText(),
+                            pts_init=self.vtag.lbs(self.i_frame),
+                            winSize=(self.size, self.size))
+        QMessageBox().information(self,
+                "Track",
+                "Tracking completed")
+        self.update_frames()
+
+    # --- setter
+    def set_i_tag(self, i):
+        i = i % self.k
+        self.tags["toggle"][i].setChecked(True)
+
+    def set_n(self, n):
+        self.n_frame = n
+        self.i_frame = 0
+        self.playback.set_n(n)
+        self.update_frames()
+
+    def set_size(self):
+        self.size = self.sliders["size"].value()
+        self.labels["size"].setText("Detect size: %d" % self.size)
+        self.update_frames()
+
+    def set_k(self):
+        """
+        Trigger by the GUI slider
+
+        self.set_k()
+            -> self.update_layout_k()
+            -> self.set_i_tag()
+            -> self.toggle_tag()
+        """
+        old_k = self.k
+        new_k = self.sliders["k"].value()
+        # change k
+        self.k = new_k
+        # update vtag
+        if self.is_load:
+            self.vtag.ARGS["k"] = new_k
+            self.vtag.DATA["lbs"] = reshape_matrix(
+                                        mat_old=self.vtag.DATA["lbs"],
+                                        shp_new=(self.n_frame, new_k, 2),
+                                        dim_old=old_k,
+                                        dim_new=new_k)
+            self.vtag.DATA["error"] = reshape_matrix(
+                                        mat_old=self.vtag.DATA["error"],
+                                        shp_new=(self.n_frame, new_k),
+                                        dim_old=old_k,
+                                        dim_new=new_k)
+        # update label
+        self.labels["k"].setText("Tags: %d" % self.k)
+        # update tag layout
+        self.update_layout_k()
 
     def set_fps(self):
-        new_fps = self.sliders["fps"].value()
-        self.labels["fps"].setText("Frame per second (FPS): %d" % (new_fps))
-        self.fps = new_fps / 1000
+        self.fps = self.sliders["fps"].value()
+        self.labels["fps"].setText("Frame per second (FPS): %d" % self.fps)
         self.change_status(True)
         self.update_frames()
 
     def set_alpha(self):
         alpha = self.sliders["alpha"].value()
         self.labels["alpha"].setText("Opacity: %d / 255" % alpha)
-        self.frame.alpha = alpha
-        self.update_frames()
-
-    def check_lbs(self):
-        self.frame.show_lbs = self.check["lbs"].isChecked()
-        self.update_frames()
-
-    def check_contours(self):
-        self.frame.show_detect = self.check["contours"].isChecked()
+        self.frame.set_alpha(alpha)
         self.update_frames()
 
     def toggle(self):
@@ -249,11 +400,6 @@ class VTPlayer(QWidget):
             self.imgs_show = self.IMGS["pred"]
 
         self.update_frames()
-
-    def save_lbs(self):
-        labels = self.OUTS["pred_labels"]
-        n_ids  = self.ARGS["n_id"]
-        # save_labels(labels, n_ids, "labels.csv")
 
     def next_frames(self):
         self.i_frame += 1
@@ -272,107 +418,163 @@ class VTPlayer(QWidget):
     def update_frames(self):
         i = self.i_frame
         self.labels["frame"].setText("Frame: %d / %d" % (i, self.n_frame))
-        self.frame.setPixmap(QPixmap(self.paths[i]))
-        # set cursor in the playback
-        self.playback.set_frame(self.i_frame)
-        # if is playing, update tmp frame in the playback
-        if self.is_play:
-            self.playback.set_frame_tmp(self.i_frame)
 
-        # show labels from the displayed frames
-        if self.has_anno:
-            self.frame.set_predict(self.imgs_show[i])
-            self.set_plot()
-            k      = self.ARGS["n_id"]
-            labels = self.OUTS["pred_labels"]
-            x      = labels[i, :, 1]
-            y      = labels[i, :, 0]
-            self.frame.set_label(x, y)
+        if self.is_load:
+            self.frame.set_image(self.vtag.img(i))
+            self.playback.set_frame(self.i_frame)
+
+            # if is playing, update tmp frame in the playback
+            if self.is_play:
+                self.playback.set_frame_tmp(self.i_frame)
+
+            # update label
+            if self.vtag.DATA["lbs"] is not None and self.check["lbs"].isChecked():
+                self.frame.set_labels(self.vtag.lbs(i))
+                self.frame.show_lbs = True
+            else:
+                self.frame.show_lbs = False
+            # update poi
+            if self.vtag.DATA["poi"] is not None and self.check["poi"].isChecked():
+                self.frame.set_poi(self.vtag.mask(i))
+                self.frame.show_poi = True
+            else:
+                self.frame.show_poi = False
+
+        # update cursor in vtframe
+        self.frame.size_m = self.size
+
         # update GUI
         self.frame.repaint()
         self.update_globalrec()
 
     def update_globalrec(self):
-        self.globalrec["frame"] = QRect(self.frame.mapToParent(QPoint(0, 0)),
+        self.globalrec["frame"] = QRect(self.frame.mapTo(self, QPoint(0, 0)),
                                         self.frame.size())
-        self.globalrec["play"] = QRect(self.playback.mapToParent(QPoint(0, 0)),
+        self.globalrec["play"] = QRect(self.playback.mapTo(self, QPoint(0, 0)),
                                         self.playback.size())
-
-    def traverse_frames(self):
-        self.i_frame = self.playback.value()
-        self.update_frames()
 
     def change_status(self, to_play):
         if to_play:
             self.is_play = True
             self.buttons["play"].setIcon(
-                self.style().standardIcon(getattr(QStyle, "SP_MediaPause")))
-            self.timer.start(int(1 / self.fps))
+                self.style().standardIcon(getattr(QStyle.StandardPixmap,
+                                                  "SP_MediaPause")))
+            self.timer.start(int(1 / self.fps * 1000))
 
         else:
             self.is_play = False
             self.buttons["play"].setIcon(
-                self.style().standardIcon(getattr(QStyle, "SP_MediaPlay")))
+                self.style().standardIcon(getattr(QStyle.StandardPixmap,
+                                                  "SP_MediaPlay")))
             self.timer.stop()
 
     def mousePressEvent(self, evt):
         self.is_press = True
         self.update_globalrec()
-        if self.globalrec["frame"].contains(evt.pos()):
-            # collect info
-            k       = self.ARGS["n_id"]
-            labels  = self.OUTS["pred_labels"]
-            counter = self.label_counter
-            i       = self.i_frame
+        if self.is_load:
+            if self.globalrec["frame"].contains(evt.position().toPoint()) and\
+                evt.button() == Qt.MouseButton.LeftButton:
+                # collect info
+                k     = self.vtag.ARGS["k"]
+                lbs   = self.vtag.DATA["lbs"]
+                i_tag = self.i_tag
+                i     = self.i_frame
 
-            # update label counter
-            self.label_counter = (counter + 1) % k
-            self.frame.label_counter = self.label_counter
+                # update labels
+                lbs[i, i_tag, 0] = self.frame.mx
+                lbs[i, i_tag, 1] = self.frame.my
 
-            # get labels
-            x, y = self.frame.mx, self.frame.my
+                # update label counter
+                self.set_i_tag(i_tag + 1)
 
-            # enter labels
-            labels[i, counter, 1] = x
-            labels[i, counter, 0] = y
+                # if label all ids, move to next frame
+                if self.i_tag == 0:
+                    self.next_frames()
+                else:
+                    self.update_frames()
 
-            # if label all ids, move to next frame
-            if ((counter + 1) % k) == 0:
-                self.next_frames()
-            else:
+            elif self.globalrec["play"].contains(evt.position().toPoint()):
+                # determine which frame to traverse to in the playback bar
+                self.playback.set_frame_tmp(self.i_frame)
+                if self.is_play:
+                    x_mouse = evt.position().x()
+                    self.i_frame = self.x_to_frame(x_mouse)
                 self.update_frames()
 
-        elif self.globalrec["play"].contains(evt.pos()):
-            self.playback.set_frame_tmp(self.i_frame)
-            if self.is_play:
-                x_mouse = evt.pos().x()
-                self.i_frame = self.x_to_frame(x_mouse)
-            self.update_frames()
+        # switch i_tag
+        if evt.button() == Qt.MouseButton.RightButton:
+            self.set_i_tag(self.i_tag + 1)
 
     def mouseReleaseEvent(self, evt):
         self.is_press = False
 
     def mouseMoveEvent(self, evt):
         self.update_globalrec()
-        if self.globalrec["play"].contains(evt.pos()):
+        if self.globalrec["play"].contains(evt.position().toPoint()):
             if (not self.is_play) or (self.is_play & self.is_press):
-                x_mouse = evt.pos().x()
+                x_mouse = evt.position().x()
                 self.i_frame = self.x_to_frame(x_mouse)
         else:
             self.i_frame = self.playback.i_frame_tmp
         self.update_frames()
 
+    def wheelEvent(self, evt):
+        # scroll down => positive
+        delta = evt.pixelDelta().y() / 4
+        size  = self.size
+        self.sliders["size"].setValue(int(size - delta))
+
     def keyPressEvent(self, evt):
-        if evt.key() == Qt.Key_Space:
+        if evt.key() == Qt.Key.Key_Space:
             self.change_status(not self.is_play)
-        elif evt.key() == Qt.Key_Right:
+        elif evt.key() == Qt.Key.Key_Right:
             self.next_frames()
-        elif evt.key() == Qt.Key_Left:
+        elif evt.key() == Qt.Key.Key_Left:
             self.prev_frames()
 
     def x_to_frame(self, x):
-        x_play = self.playback.mapToParent(QPoint(0, 0)).x()
+        x_play = self.playback.mapTo(self, QPoint(0, 0)).x()
         frame = int((x - x_play) // self.playback.bin)
         if frame > (self.n_frame - 1):
             frame = self.n_frame - 1
         return frame
+
+    # DnD
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.accept()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):
+        if event.mimeData().hasUrls:
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+            for url in event.mimeData().urls():
+                text = str(url.toLocalFile())
+            if ".h5" in text:
+                self.load(h5=text)
+        else:
+            event.ignore()
+
+
+def reshape_matrix(mat_old, shp_new, dim_old, dim_new):
+    """
+    return new matrix (mat_new) with data from the old matrix (mat_old)
+    """
+    mat_new = np.zeros(shp_new)
+    if dim_new >= dim_old:
+        mat_new[:, :dim_old] = mat_old[:, :dim_old]
+    elif dim_new < dim_old:
+        mat_new[:, :dim_new] = mat_old[:, :dim_new]
+    return mat_new
+
+def localtime():
+    return time.strftime("%y%m%d%H%M%S", time.localtime())

@@ -24,12 +24,12 @@ class VTPlayback(QWidget):
         self.initUI()
 
     def initUI(self):
-        # self.setMinimumHeight(20)
         self.setFixedHeight(30)
         self.repaint()
 
     def set_n(self, n):
         self.n = n
+        self.repaint()
 
     def set_heat(self, input):
         self.ls_heat = get_rank(input, len(palette_viridis))
@@ -51,11 +51,11 @@ class VTPlayback(QWidget):
         super().paintEvent(evt)
         self.w   = self.size().width()
         self.h   = self.size().height()
-        self.bin = (self.w / self.n)
+        self.bin = (self.w / self.n) if self.n != 0 else 1
         # plot color
         painter = QPainter(self)
         pen = QPen()
-        pen.setStyle(Qt.SolidLine)
+        pen.setStyle(Qt.PenStyle.SolidLine)
         pen.setWidth(self.bin)
         base = int(self.bin / 2)
         for i in range(len(self.ls_heat)):
@@ -76,14 +76,13 @@ class VTPlayback(QWidget):
         pos = int(base + self.i_frame_tmp * self.bin)
         painter.setPen(pen)
         painter.drawLine(pos, 0, pos, self.h)
-
         # border
-        # pen.setWidth(2)
-        # pen.setColor(QColor(255, 255, 0))
-        # painter.drawLine(0, 0, self.w, 0)
-        # painter.drawLine(self.w, 0, self.w, self.h)
-        # painter.drawLine(self.w, self.h, 0, self.h)
-        # painter.drawLine(0, self.h, 0, 0)
+        pen.setWidth(2)
+        pen.setColor(QColor(255, 255, 0))
+        painter.drawLine(0, 0, self.w, 0)
+        painter.drawLine(self.w, 0, self.w, self.h)
+        painter.drawLine(self.w, self.h, 0, self.h)
+        painter.drawLine(0, self.h, 0, 0)
 
 def draw_vline(painter, pos, height):
     painter.drawLine(pos, 0, pos, height)

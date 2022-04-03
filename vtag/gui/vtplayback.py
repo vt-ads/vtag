@@ -31,6 +31,11 @@ class VTPlayback(QWidget):
         self.n = n
         self.repaint()
 
+    def set_error(self, error):
+        error = error.sum(axis=1)
+        self.ls_heat = get_rank(error, len(palette_viridis))
+        self.repaint()
+
     def set_heat(self, input):
         self.ls_heat = get_rank(input, len(palette_viridis))
         self.repaint()
@@ -88,7 +93,7 @@ def draw_vline(painter, pos, height):
     painter.drawLine(pos, 0, pos, height)
 
 def get_rank(input, n_bin):
-    quans = np.quantile(input[3:-3], [i/n_bin for i in range(n_bin)])
+    quans = np.quantile(np.unique(input[3:-3]), [i/n_bin for i in range(n_bin)])
     idx_q = []
     for i in input:
         val_abs = np.abs(i - quans)

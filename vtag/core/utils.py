@@ -7,7 +7,7 @@ import numpy     as np
 import cv2       as cv
 import pandas    as pd
 import matplotlib.pyplot as plt
-from scipy.signal import spline_filter, convolve, convolve2d, find_peaks
+import os
 
 
 def get_binary(signals, cut=.5, cutabs=None, upbound=1):
@@ -32,28 +32,11 @@ def get_binary(signals, cut=.5, cutabs=None, upbound=1):
                         cutabs, upbound, cv.THRESH_BINARY)
     return out
 
-def get_nonzero_from_img(img):
-    """
-    Turn a sparse 2d array to a dataframe storing the positions of non-zero pixels
-    """
-    f, y, x = np.nonzero(img)
-    return pd.DataFrame({"frame": f, "y": y, "x" : x})
-
-def show_poi(img, poi, lbs=None, figsize=None):
-    """
-    inputs
-    ---
-    img: 2d np array
-    poi: dataframe (x, y)
-    """
-    if figsize is not None:
-        plt.figure(figsize=figsize)
-    plt.imshow(img, aspect='auto')
-    if lbs is None:
-        plt.scatter(poi["x"], poi["y"], s=3)
+def standardize_to_01(matrix, axis=None):
+    if axis is None:
+        return (matrix - np.min(matrix)) / (np.max(matrix) - np.min(matrix))
     else:
-        for lb in np.unique(lbs):
-            plt.scatter(poi[lbs == lb]["x"],
-                        poi[lbs == lb]["y"], 3)
+        return (matrix - np.min(matrix, axis=axis)) / (np.max(matrix, axis=axis) - np.min(matrix, axis=axis))
 
-
+def distance(p1, p2):
+    return ((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** .5

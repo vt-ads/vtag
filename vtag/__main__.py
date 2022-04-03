@@ -1,8 +1,8 @@
 import sys
 from PyQt6.QtWidgets import QApplication
-from .gui.vtplayer    import VTPlayer
+from .gui.vtgui    import VTGUI
 
-args   = sys.argv
-app    = QApplication(args)
-player = VTPlayer(args)
+args = sys.argv
+app  = QApplication(args)
+gui  = VTGUI(args)
 sys.exit(app.exec())
