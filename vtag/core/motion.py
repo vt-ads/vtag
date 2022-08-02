@@ -16,7 +16,7 @@ def detect_motion(imgs, frame, span=1):
 
     example
     ---
-    i = 3; j = 1
+    frame = 3; span = 1
     3:5 ->     3-4
     2:4 ->   2-3
     3:6 ->     3-4-5

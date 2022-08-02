@@ -67,7 +67,7 @@ class VTag():
                 self.ARGS["k"]     = self.DATA["lbs"].shape[1]
         pass
 
-    def detect_poi(self, frame, window=100, n_ticks=2, n_denoise=2):
+    def detect_poi(self, frame, window=30, n_ticks=2, n_denoise=2):
         ''''
         detect high-motion pixels as pixel of interest (POI)
         '''
